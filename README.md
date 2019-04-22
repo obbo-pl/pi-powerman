@@ -22,6 +22,11 @@
 
 ### Installation:
 ```
+cd /tmp
+wget https://www.obbo.pl/files/articles/pi-powerman/pi-powerman.tgz
+sudo mkdir /usr/local/pi-powerman
+sudo tar -xf pi-powerman.tgz -C /usr/local/pi-powerman/
+
 sudo apt-get update
 sudo apt-get install python3-yaml python3-pip librrd-dev
 sudo python3 -m pip install RPi.GPIO smbus rrdtool schedule paho-mqtt
