@@ -16,8 +16,14 @@
 - Communication with Raspberry via I2C and two dedicated I/O ports,
 - Dedicated LED for power and Raspberry status indication.
 
+### Requirements:
+- Python 3
+- Raspbian Jessie or newer
+
+### Installation:
+
 Katalog Hardware zawiera przykładowe schematy ukłdów zasilania.
 
 Katalog Firmware zawiera orpogramowanie dla przykładowgo hardware.
 
-[obbo.pl](http://obbo.pl)
+For more information: [obbo.pl](http://obbo.pl)
