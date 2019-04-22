@@ -21,6 +21,19 @@
 - Raspbian Jessie or newer
 
 ### Installation:
+'''
+sudo apt-get update
+sudo apt-get install python3-yaml python3-pip librrd-dev
+sudo python3 -m pip install RPi.GPIO smbus rrdtool schedule paho-mqtt
+
+cd /etc/systemd/system/ 
+sudo ln -s /usr/local/pi-powerman/pi-powerman.service pi-powerman.service
+
+sudo systemctl daemon-reload
+sudo systemctl enable pi-powerman.service
+sudo systemctl start pi-powerman.service
+'''
+
 
 Katalog Hardware zawiera przykładowe schematy ukłdów zasilania.
 
