@@ -1,7 +1,7 @@
 # Pi-Powerman
 Głównym celem jest stworzenie uniwersalnego serwisu działającego z Raspberry Pi pozwalającego na kontrolowanie układu zasilania. Oczywiście układ zasilania musi być zgodny pod względem sposobu komunikacji z serwisem. Obecna wersja wykorzystuje w tym celu I2C oraz dwa porty I/O. W skład rozwiązania wchodzą zatem: serwis uruchomiony na Raspberry oraz współpracujący z nim układ zasilania z mikrokontrolerem. 
 
-Podstawowe możliwości:
+### Main features:
 - Możliwość łatwego dostosowania układu zasilacza,
 - Funkcja UPS, automatyczne przełączenie na zasilanie zapasowe, kontrola stanu naładowania i ładowanie akumulatora
 - Automatyczny "shutdown" po zaniku zasilania,
@@ -16,7 +16,7 @@ Podstawowe możliwości:
 - Komunikacja z Raspberry przez I2C i dwa dedykowane porty I/O,
 - Dedykowana LED dla sygnalizacji statusu układu zasilania i Raspberry,
 
-Katalog Hardware zawiera przykładowe schematy ukłdów zasilania
-KataloF Firmware zawiera orpogramowanie dla przykładowgo hardware
+Katalog Hardware zawiera przykładowe schematy ukłdów zasilania.
+Katalog Firmware zawiera orpogramowanie dla przykładowgo hardware.
 
 [obbo.pl](http://obbo.pl)
