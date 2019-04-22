@@ -1,0 +1,16 @@
+[Unit]
+Description=Pi-Powerman Python Service
+After=multi-user.target
+
+[Service]
+ExecStart=/usr/local/pi-powerman/pi-powerman.py
+TimeoutStartSec=10
+TimeoutStopSec=30
+RestartSec=120
+Restart=always
+StandardOutput=null
+StandardError=syslog 
+SyslogIdentifier=pi-powerman
+
+[Install]
+WantedBy=multi-user.target 

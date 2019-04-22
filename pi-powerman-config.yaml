@@ -1,0 +1,196 @@
+# configuration file for pi-powerman.py
+
+common:
+    check_request_period_sec: 2
+    check_pipower_period_sec: 150
+    power_off_after_shutdown: true
+    keepalive_period_sec: 90
+        
+export:
+    destination:
+        # uncomment required destination 
+        - 'show'
+        #- 'save'
+        #- 'log'
+        - 'rrd'
+        #- 'csv'
+        # for IoT communication setup mqtt section 
+        - 'iot'
+    #report in humane readable format (show, save, log)
+    report_date_time_format: '%H:%M:%S on %Y %B %d'
+    report_raw_data: true
+    report_buttons_state: true
+    report_pi_daemon_state: true
+    report_supply_voltage: true
+    report_bus_voltage: true
+    report_shunt_voltage: true
+    report_current: true
+    report_power: true
+    report_outputs_state: true
+    report_ups_state: true
+    report_battery_voltage: true
+    report_battery_temperature: true
+    report_errors: true
+    save_folder: '/usr/local/pi-powerman/'
+    save_file: 'pi-powerman-status_%Y-%m-%d.log'
+    save_last: false
+    csv_folder: '/usr/local/pi-powerman/'
+    csv_file: 'pi-powerman-status_%Y-%m-%d.csv'
+    csv_decimal_mark: ','
+    rrd_folder: '/var/www/pi-powerman/rrd/'
+    rrd_graph_update: true
+    # temperature_unit: 'K'(default), 'C', 'F'
+    temperature_unit: 'C'
+    iot_protocol: 'mqtt'
+    iot_publish:
+        - 'supply_voltage'
+        - 'battery_voltage'
+        - 'battery_temperature'
+        - 'power'
+        #- 'empty'
+        #- 'bus_voltage'
+        #- 'shunt_voltage'
+        #- 'current'
+        
+log:
+    # level: Control the severity of messages logged to the error_log.
+    # Available values: CRITICAL, ERROR, WARNING, INFO, DEBUG
+    level: INFO
+    #level: DEBUG
+
+mqtt:
+    # 0 - unsecured_TCP (port 1883)
+    # 1 - unsecured Websockets (port 80)
+    # 2 - SSL Websockets (port 443)
+    connection_type: 2
+    host: 'mqtt.thingspeak.com'
+    credential_file: '/usr/local/pi-powerman/pi-powerman.mqtt' 
+    
+# output supported on power module
+outputs:
+    # output aliases shown in the report
+    aliases:
+        OUT1: 'RasPi'
+        OUT2: 'USB1'
+        OUT3: 'USB2'
+        OUT4: 'HDD'
+
+factors:
+    supply_voltage: 0.01
+    battery_voltage: 0.01
+    battery_temperature: 0.01
+    bus_voltage: 0.0005
+    shunt_voltage: 0.01
+    current: 0.1
+    power: 0.002
+
+jobs:
+    on_boot:
+        timeout: 60
+        commands:
+            - '$clear_error DAEMON_ERROR'
+            - '$clear_error SYSTEM_ERROR'
+            - '$clear_error DAEMON_TIMEOUT'
+            - '$press_button SW2 ON'
+        on_failed: '$set_daemon_error'
+    
+    maintenance:
+        #period: 600
+        #timeout: 120
+        #commands:
+        #    - '/usr/local/pi-powerman/check_system_status.sh'
+        #on_failed: '$set_daemon_error'
+        
+buttons:
+    aliases:
+        PWR: 'Power'
+        SW1: 'WiFi'
+        SW2: 'PPP'
+        SW3: 'SW3'
+    action:
+    # set buttons behavior and scripts executed on event
+    # available values: ON, TURN_OFF_01, TURN_OFF_02, TURN_OFF_03, TURN_OFF_04, OFF, TURN_ON_01, TURN_ON_02, TURN_ON_03, TURN_ON_04
+    # if you not need script, leave option blank or comment line
+    # set configuration for each button
+        PWR:
+            TURN_OFF_01: 
+                timeout: 180
+                commands:
+                    - '/usr/local/pi-powerman/shut.sh'
+            
+        SW1:
+            TURN_ON_01: 
+                timeout: 120
+                commands:
+                    - '/root/wifi-start.sh'
+                on_success: '$set_button SW1 ON'
+                on_failed: '$set_button SW1 OFF'
+                #on_exit(-1): '$set_button SW1 OFF'
+                #on_exit(0): '$set_button SW1 ON'
+                #on_exit(1): '$set_button SW1 OFF'
+                #on_exit(2): '$set_button SW1 OFF'
+
+            TURN_OFF_01: 
+                timeout: 60
+                commands:
+                    - '/root/wifi-stop.sh'
+                on_success: '$set_button SW1 OFF'
+                on_failed: '$set_button SW1 ON'
+                
+            #check:
+            #    period: 600
+            #    timeout: 60
+            #    commands:
+            #        - '/root/wifi-check.sh'
+            #    on_success: '$set_button SW1 ON'
+            #    on_failed: '$set_button SW1 OFF'
+                
+        SW2:
+            TURN_ON_01: 
+                timeout: 180
+                commands:
+                    - '$set_output OUT2 ON'
+                    - '$wait 40'
+                    - '/usr/local/pi-powerman/ppp0_start.sh'
+                on_success: '$set_button SW2 ON'
+                on_failed: '$set_button SW2 OFF'
+
+            TURN_OFF_01: 
+                timeout: 120
+                commands:
+                    - '/usr/local/pi-powerman/ppp0_stop.sh'
+                    - '$wait 20'
+                    - '$set_output OUT2 OFF'
+                on_success: '$set_button SW2 OFF'
+                on_failed: '$set_button SW2 ON'
+
+        SW3:
+            #TURN_ON_01: 
+            #    timeout: 10
+            #    commands:
+            #        - '$clear_error DAEMON_ERROR'
+            #        - '$clear_error DAEMON_TIMEOUT'
+            #        - '$wait 1'
+            #        - '$disable_battery_charge'
+            #    on_success : '$set_button SW2 OFF; $set_button SW3 OFF'
+            #    on_failed : '$set_button SW3 OFF'
+
+            #TURN_ON_02: 
+            #    timeout: 120
+            #    commands:
+            #        - '$wait 2'
+            #        - '$set_system_error'
+            #        - '$press_button SW1 ON'
+            #    on_success: '$set_button SW3 ON'
+            #    on_failed: '$set_button SW3 OFF'
+                
+            #TURN_OFF_01: 
+            #    timeout: 10
+            #    commands:
+            #        - '$clear_error SYSTEM_ERROR'
+            #        - '$set_output OUT3 OFF'
+            #        - '$press_button SW1 ON'
+            #    on_success: '$set_button SW3 OFF'
+            #    on_failed: '$set_button SW3 ON'
+ 
+            

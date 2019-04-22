@@ -1,0 +1,14 @@
+# https://thingspeak.com
+# Replace <YOUR-CHANNEL-ID> with your channel ID.
+channel_ID = '<YOUR-CHANNEL-ID>' 
+
+# The Write API Key for the channel.
+# Replace <YOUR-CHANNEL-WRITEAPIKEY> with your write API key.
+channel_write_API_key = '<YOUR-CHANNEL-WRITEAPIKEY>' 
+
+# You can use any Username.
+username = 'PiPowerman'
+
+# Your MQTT API Key from Account > My Profile.
+API_key = '<MQTT_API_Key>'
+
