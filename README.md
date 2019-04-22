@@ -3,7 +3,7 @@
 
 #### Main features:
 - Easy adaptation of the power supply system,
-- UPS function, automatic switching to backup power supply, charging status monitoring and battery charging,
+- UPS function, automatic switching to backup power supply, battery charging and charging status monitoring,
 - Automatic "shutdown" after power loss,
 - Up to 8 buttons with LED (1 power button and 7 user defined),
 - Ability to define extended scenarios for buttons,
