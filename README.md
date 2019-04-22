@@ -1,5 +1,5 @@
 # Pi-Powerman
-Głównym celem jest stworzenie uniwersalnego serwisu działającego z Raspberry Pi pozwalającego na kontrolowanie układu zasilania. Oczywiście układ zasilania musi być zgodny pod względem sposobu komunikacji z serwisem. Obecna wersja wykorzystuje w tym celu I2C oraz dwa porty I/O. W skład rozwiązania wchodzą zatem: serwis uruchomiony na Raspberry oraz współpracujący z nim układ zasilania z mikrokontrolerem. 
+  The main goal is to create a universal service operating with Raspberry Pi allowing you to control the power system. Of course, the power supply must be compatible in terms of how to communicate with the service. The current version uses I2C and two I / O ports for this purpose. The solution consists of: a service running on Raspberry and a microcontroller power supply co-operating with it. 
 
 #### Main features:
 - Easy adaptation of the power supply system,
