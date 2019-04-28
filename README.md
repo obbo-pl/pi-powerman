@@ -43,4 +43,4 @@ sudo systemctl start pi-powerman.service
 These sections covers info on building sample hardware, including schematics, PCBs, and the corresponding firmware.
 
 
-For more information: [www.obbo.pl](http://www.obbo.pl)
+For more information: [www.obbo.pl](http://www.obbo.pl/pi-powerman)
