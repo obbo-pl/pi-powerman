@@ -4,7 +4,7 @@
 #
 # Author: Krzysztof Markiewicz
 # 2019, www.obbo.pl
-# v.0.8.20190417
+# v.0.8.20190428
 #
 # This program is distributed under the terms of the GNU General Public License v3.0
 #
@@ -105,7 +105,7 @@ def main():
     hardware_setup = PiPowerSetup(hardware)
     hardware_setup.load(hardware.setup)
     if (hardware_setup.check(i2c)):
-        logger.info('The hardware configuration is up to date')
+        logger.info('The hardware configuration is up-to-date')
     else:
         logger.info('Sending a new setup')
         hardware_setup.send(i2c)
@@ -113,11 +113,7 @@ def main():
     
     data = PiPowerData()
     export = PiPowerExport(hardware, config)
-    export.create_rrd()
-    iot = None
-    if 'iot' in config.export['destination']:
-        iot = PiPowerMQTT(config.mqtt)
-        iot.connect()
+    export.create_rrd()        
     # run on boot task
     if 'on_boot' in config.jobs:
         if not(config.jobs['on_boot'] is None):
@@ -147,12 +143,12 @@ def main():
         # get data from hardware module
         check_pipower_timer.update(loop_delay)
         if check_pipower_timer.check():
-            check_pipower(i2c, 'schedule', data, hardware, config, export, iot)
+            check_pipower(i2c, 'schedule', data, hardware, config, export)
             check_pipower_timer.reset()
             keepalive_timer.reset()
         # check request from Raspberry
         if check_request():
-            check_pipower(i2c, 'hardware request', data, hardware, config, export, iot)       
+            check_pipower(i2c, 'hardware request', data, hardware, config, export)     
             keepalive_timer.reset()
         # check buttons state
         if data.ready:
@@ -173,7 +169,7 @@ def main():
         if sys.platform.startswith('linux'):
             proc = Popen(shlex.split('/bin/systemctl list-jobs'), stdout=PIPE, stderr=PIPE)
             stdout, stderr = proc.communicate()
-            logger.info('list-jobs: {}'.format(stdout.decode('utf-8')))
+            logger.debug('list-jobs: {}'.format(stdout.decode('utf-8')))
             systemctl_result = stdout.decode('utf-8').splitlines() 
             poweroff = False
             for i in systemctl_result:
@@ -186,8 +182,6 @@ def main():
                 logger.debug('Requesting PWR OFF')
                 i2c_command.run('$press_button PWR OFF')
                 i2c.send_buffer()
-    if 'iot' in config.export['destination']:
-        iot.disconnect()
     logger.info('Bye!')
     # END
    
@@ -223,11 +217,11 @@ def check_request():
     # low state on pin 11 => activate request
     return not(request)
        
-def check_pipower(i2c, source, data, hardware, config, export, iot):  # TODO  przeniesc czesc do klasy
+def check_pipower(i2c, source, data, hardware, config, export):
     logger.debug('Checking I2C bus on: {}'.format(source))
     data.set(i2c.read_bus(hardware.requests['DAEMON_REQUEST_READ_STATUS']), config.factors)
     if data.ready:
-        export.run(source, data, iot)
+        export.run(source, data)
 
 def check_button_change(buffer, new, hardware, config):
     new_button_history = config['history']
@@ -425,6 +419,7 @@ class PiPowerExport(object):
     def __init__(self, hardware, config):
         self.hardware = hardware
         self.setup = config.export
+        self.mqtt = config.mqtt
         self.active_rrd = []
         self.indent = '\t'
         self.temperature_unit = 'K'
@@ -433,8 +428,18 @@ class PiPowerExport(object):
         self.aliases['buttons'] = config.buttons['aliases']
         self.temperature_unit_string = self._convert_temperature()
         self.csv_separator = ';'
+        self.iot = None
+        if 'iot' in self.setup['destination']:
+            logger.info('MQTT start')
+            self.iot = PiPowerMQTT(self.mqtt)
+            self.iot.connect()
+
+    def __del__(self):
+        if 'iot' in self.setup['destination']:
+            logger.info('MQTT stop')
+            self.iot.disconnect()
         
-    def run(self, source, data, iot):
+    def run(self, source, data):
         if 'destination' in self.setup:
             if not(self.setup['destination'] is None):
                 destination = self.setup['destination']
@@ -454,7 +459,7 @@ class PiPowerExport(object):
                     if 'csv' in destination:
                         self._csv_save(self._csv_update(data))      
                     if 'iot' in destination:
-                        self._iot_publish(data, iot)
+                        self._iot_publish(data)
         else:
             logger.error('Export destination is not defined')
             
@@ -600,7 +605,7 @@ class PiPowerExport(object):
                     'GPRINT:temperature:MAX:Max\: %5.1lf(' + self.temperature_unit_string + ')',
                     'GPRINT:temperature:MIN:Min\: %5.1lf(' + self.temperature_unit_string + ')\t\t\t')
 
-    def _iot_publish(self, data, iot):
+    def _iot_publish(self, data):
         values = []
         for i in self.setup['iot_publish']:
             value = None
@@ -622,7 +627,7 @@ class PiPowerExport(object):
                 values.append('{:4.1f}'.format(value))
             else:
                 values.append(None)
-        iot.publish(values)
+        self.iot.publish(values)
                     
     def _create_report(self, source, data):
         result = []
@@ -754,7 +759,9 @@ class PiPowerExport(object):
                 try:
                     with open(file_name, 'w') as file:
                         file.write('Date;Time;Buttons;Supply voltage [V];Bus voltage [V];Shunt voltage [mV];Current [mA];Power [W];Outputs;')
-                        file.write('UPS state;Battery voltage [V];Battery temperature [' + self.temperature_unit_string + '];Errors;\n')
+                        if self.hardware.features['ups']:
+                            file.write('UPS state;Battery voltage [V];Battery temperature [' + self.temperature_unit_string + '];')
+                        file.write('Errors;\n')
                         file.close()
                 except IOError as e:
                     logger.error('Save CSV with error, ({})'.format(e))
