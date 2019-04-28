@@ -39,9 +39,7 @@ sudo systemctl enable pi-powerman.service
 sudo systemctl start pi-powerman.service
 ```
 
-
-Katalog Hardware zawiera przykładowe schematy ukłdów zasilania.
-
-Katalog Firmware zawiera orpogramowanie dla przykładowgo hardware.
+### Hardware & Firmware.
+These sections covers info on building sample hardware, including schematics, PCBs, and the corresponding firmware.
 
 For more information: [obbo.pl](http://obbo.pl)
