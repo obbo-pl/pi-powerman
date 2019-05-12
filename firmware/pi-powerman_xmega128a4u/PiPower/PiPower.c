@@ -39,6 +39,7 @@ FUSES = {
 #define VERISON_MINOR		"8"
 const char DEVICE_INFO_1[OUTPUT_BUFFER_SIZE]	PROGMEM = "HW: Pi-Powerman." VERSION_MAJOR "." VERISON_MINOR " "; 
 const char DEVICE_INFO_2[OUTPUT_BUFFER_SIZE]	PROGMEM = "(Build: " __DATE__ " " __TIME__ ")";
+const char DEVICE_INFO_3[OUTPUT_BUFFER_SIZE]	PROGMEM = "UPS: LTC4011 8*NiMh 1900mAh";
 
 // Default setup values
 uint16_t EEMEM adc_vin_cal = 10403;
@@ -50,7 +51,6 @@ uint8_t EEMEM main_error_recoverable = ((1 << MAIN_ERROR_DAEMON_TIMEOUT) | (1 <<
 uint8_t EEMEM ups_behavior = UPS_SHUT_DELAYED;
 uint16_t EEMEM ups_delay_s = 180;
 uint16_t EEMEM ups_cut_level_mv = 8000;
-
 
 // Prototypes of functions 
 void main_ReadSetup(void);
@@ -476,6 +476,10 @@ void twi_SlaveProcessData(void)
 			case DAEMON_REQUEST_READ_INFO2:
 				// ~20us
 				main_CopyCharToTWIBuffer(DEVICE_INFO_2, twiSlave.sendData);
+				break;
+			case DAEMON_REQUEST_READ_INFO3:
+				// ~20us
+				main_CopyCharToTWIBuffer(DEVICE_INFO_3, twiSlave.sendData);
 				break;
 			case DAEMON_REQUEST_READ_SETUP:
 				// ~20us
