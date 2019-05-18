@@ -69,7 +69,7 @@ void main_ClearButtonRequest();
 void main_CopyToTWIBuffer(uint8_t *source, register8_t *dest);
 void main_CopyFromTWIBuffer(register8_t *source, uint8_t *dest);
 void main_CopyCharToTWIBuffer(const char *source, register8_t *dest);
-void main_SaveSetup();
+void main_SaveSetup(void);
 void main_SendSetup(register8_t *dest);
 void main_PowerReduction(void);
 void CCPWrite( volatile uint8_t *address, uint8_t value );
@@ -99,7 +99,6 @@ int main(void)
 	// Initialize TWI slave
 	TWI_SlaveInitializeDriver(&twiSlave, &TWIC, twi_SlaveProcessData);
 	TWI_SlaveInitializeModule(&twiSlave, TWI_SLAVE_ADDRESS, TWI_SLAVE_INTLVL_HI_gc);
-	twiSlave.sendData[0] = DAEMON_REQUEST_WAITING;
 	// Initialize TWI master
 	TWI_MasterInit(&twiMaster, &TWIE, TWI_MASTER_INTLVL_MED_gc, TWI_BAUDSETTING);
 	// Initialize UPS
@@ -545,7 +544,7 @@ void twi_SlaveProcessData(void)
 		}
 	}
 	// Write buffer
-	if (twiSlave.bytesReceived == OUTPUT_BUFFER_SIZE) {
+	if (twiSlave.bytesReceived == (OUTPUT_BUFFER_SIZE - 1)) {
 		switch(twiSlave.receivedData[0]) {
 			case DAEMON_REQUEST_WRITE_SETUP:
 				// DAEMON_REQUEST_CONFIG <list_of_values>
@@ -558,8 +557,6 @@ void twi_SlaveProcessData(void)
 
 void main_CopyToTWIBuffer(uint8_t *source, register8_t *dest)
 {
-	// skip first byte
-	*dest++;
 	for (int i = 0; i < OUTPUT_BUFFER_SIZE; i++) {
 		*dest++ = (register8_t)(*source++); 
 	}
@@ -567,17 +564,15 @@ void main_CopyToTWIBuffer(uint8_t *source, register8_t *dest)
 
 void main_CopyFromTWIBuffer(register8_t *source, uint8_t *dest)
 {
-	// skip first byte
+	// skip first byte (command)
 	*source++;
-	for (int i = 0; i < OUTPUT_BUFFER_SIZE; i++) {
+	for (int i = 1; i < (OUTPUT_BUFFER_SIZE); i++) {
 		*dest++ = (uint8_t)(*source++);
 	}
 }
 
 void main_CopyCharToTWIBuffer(const char *source, register8_t *dest)
 {
-	// skip first byte
-	*dest++;
 	for (int i = 0; i < OUTPUT_BUFFER_SIZE; i++) {
 		*dest++ = (register8_t)pgm_read_byte(source++);
 	}
@@ -596,7 +591,7 @@ void main_ReadSetup(void)
 	*(pipo_setup.ups_cut_level_mv) = eeprom_read_word(&ups_cut_level_mv);
 }
 
-void main_SaveSetup()
+void main_SaveSetup(void)
 {
 	eeprom_write_word(&adc_vin_cal, twi_read_buffer[1] * 0x100 + twi_read_buffer[0]);
 	eeprom_write_word(&adc_vbat_cal, twi_read_buffer[3] * 0x100 + twi_read_buffer[2]);

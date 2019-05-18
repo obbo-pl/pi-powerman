@@ -4,7 +4,7 @@
 #
 # Author: Krzysztof Markiewicz
 # 2019, www.obbo.pl
-# v.0.8.20190428
+# v.0.8.20190518
 #
 # This program is distributed under the terms of the GNU General Public License v3.0
 #
@@ -100,7 +100,7 @@ def main():
     # handle I2C bus
     i2c = PiPowerI2C(hardware.i2c)
     # get hardware info
-    logger.info(get_hardware_info(i2c, hardware.requests))
+    logger.info(get_hardware_info(i2c, hardware.requests, hardware.features))
     # get the firmware configuration, check and update if necessary  
     hardware_setup = PiPowerSetup(hardware)
     hardware_setup.load(hardware.setup)
@@ -185,13 +185,16 @@ def main():
     logger.info('Bye!')
     # END
    
-def get_hardware_info(i2c, requests):
+def get_hardware_info(i2c, requests, features):
     info = []
-    info.extend(i2c.read_bus(requests['DAEMON_REQUEST_INFO1'])[1:])
-    info.extend(i2c.read_bus(requests['DAEMON_REQUEST_INFO2'])[1:])
+    info.extend(i2c.read_bus(requests['DAEMON_REQUEST_READ_INFO1']))
+    info.extend(i2c.read_bus(requests['DAEMON_REQUEST_READ_INFO2']))
+    if features['ups']:
+        info.extend([0x3b, 0x20])
+        info.extend(i2c.read_bus(requests['DAEMON_REQUEST_READ_INFO3']))
     result = ''
     for i in info:
-        if (i >= 0x20) and (i < 0x80) :
+        if (i >= 0x20):
             result = ''.join([result, chr(i)])
     return result
     
@@ -406,13 +409,13 @@ class PiPowerI2C(object):
         logger.debug('Leaving buffer: "{}"'.format(self.buffer))
 
     def read_bus(self, command):
-        raw_data = [0,0]
+        raw_data = [0, 0]
         logger.debug('Reading I2C device at address ' + str(hex(self.config['ADDRESS'])))
         try:
             raw_data = bus.read_i2c_block_data(self.config['ADDRESS'], command, self.config['RECEIVE_BUFFER_SIZE'])
         except IOError as e:
             logger.critical('Read I2C bus problem: "{}"'.format(e)) 
-            raw_data = [0,0]            
+            raw_data = [0, 0]            
         return raw_data
 
 class PiPowerExport(object):
@@ -1415,19 +1418,19 @@ class PiPowerData(object):
             self.raw = []
             for i in data:
                 self.raw.append(i)
-            self.buttons = [[data[1], data[5]], [data[2], data[6]], [data[3], data[7]], [data[4], data[8]]]
-            self.pi_daemon_state = data[9]
-            self.supply_voltage = (data[11] * 0x100 + data[10]) * factors['supply_voltage']
-            self.battery_voltage = (data[13] * 0x100 + data[12]) * factors['battery_voltage']
-            self.battery_temperature = (data[15] * 0x100 + data[14]) * factors['battery_temperature']
-            self.output_state = [data[16]]
-            self.ups_state = data[17]
-            self.bus_voltage = (data[19] * 0x100 + data[18]) * factors['bus_voltage']
-            self.shunt_voltage = (data[21] * 0x100 + data[20]) * factors['shunt_voltage']
-            self.current = (data[23] * 0x100 + data[22]) * factors['current']
-            self.power = (data[25] * 0x100 + data[24]) * factors['power']
-            self.errors = data[26]
-            self.requst = data[27]
+            self.buttons = [[data[0], data[4]], [data[1], data[5]], [data[2], data[6]], [data[3], data[7]]]
+            self.pi_daemon_state = data[8]
+            self.supply_voltage = (data[10] * 0x100 + data[9]) * factors['supply_voltage']
+            self.battery_voltage = (data[12] * 0x100 + data[11]) * factors['battery_voltage']
+            self.battery_temperature = (data[14] * 0x100 + data[13]) * factors['battery_temperature']
+            self.output_state = [data[15]]
+            self.ups_state = data[16]
+            self.bus_voltage = (data[18] * 0x100 + data[17]) * factors['bus_voltage']
+            self.shunt_voltage = (data[20] * 0x100 + data[19]) * factors['shunt_voltage']
+            self.current = (data[22] * 0x100 + data[21]) * factors['current']
+            self.power = (data[24] * 0x100 + data[23]) * factors['power']
+            self.errors = data[25]
+            self.requst = data[26]
             self.ready = True
 
 class PiPowerSetup(object):
@@ -1440,7 +1443,6 @@ class PiPowerSetup(object):
         self.hw_requests = hardware.requests
         
     def load(self, setup):
-        self.setup.append(self.hw_requests['DAEMON_REQUEST_WRITE_SETUP'])
         self.setup.append(setup['calibration_vin'] & 0xff)
         self.setup.append(setup['calibration_vin'] >> 8)
         self.setup.append(setup['calibration_vbat'] & 0xff)
@@ -1456,21 +1458,23 @@ class PiPowerSetup(object):
         self.setup.append(setup['ups_shut_delay_s'] >> 8)
         self.setup.append(setup['ups_cut_level_mv'] & 0xff)
         self.setup.append(setup['ups_cut_level_mv'] >> 8)
-        while len(self.setup) < 32:
+        while len(self.setup) < (self.hw_i2c['RECEIVE_BUFFER_SIZE'] - 1):
             self.setup.append(0x00)
        
     def check(self, i2c):
         equal = False
         setup = []
         setup = i2c.read_bus(self.hw_requests['DAEMON_REQUEST_READ_SETUP'])
+        logger.debug('Current setup: "{}"'.format(setup))
         if len(setup) >= len(self.setup):
             equal = True
-            for i in range (1, len(self.setup), 1):
+            for i in range (0, len(self.setup), 1):
                 if not(self.setup[i] == setup[i]):
                     equal = False
         return equal
     
     def send(self, i2c):
+        self.setup.insert(0, self.hw_requests['DAEMON_REQUEST_WRITE_SETUP'])
         i2c.buffer.extend([self.setup])
         i2c.send_buffer()
 
