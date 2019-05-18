@@ -34,9 +34,13 @@ FUSES = {
 	.FUSEBYTE5 = 0xE9,  /* EESAVE and BOD Level */
 };
 
-
-#define VERSION_MAJOR		"0"
-#define VERISON_MINOR		"8"
+#define DATA_FRAME_FORMAT		"1"
+#define UPS_PRESENCE			"1"
+#define BUTTONS_COUNT			"4"
+#define OUTPUTS_COUNT			"4"
+#define VERSION_MAJOR			"0"
+#define VERISON_MINOR			"8"
+const char DEVICE_INFO_0[OUTPUT_BUFFER_SIZE]	PROGMEM = DATA_FRAME_FORMAT UPS_PRESENCE BUTTONS_COUNT OUTPUTS_COUNT;
 const char DEVICE_INFO_1[OUTPUT_BUFFER_SIZE]	PROGMEM = "HW: Pi-Powerman." VERSION_MAJOR "." VERISON_MINOR " "; 
 const char DEVICE_INFO_2[OUTPUT_BUFFER_SIZE]	PROGMEM = "(Build: " __DATE__ " " __TIME__ ")";
 const char DEVICE_INFO_3[OUTPUT_BUFFER_SIZE]	PROGMEM = "UPS: LTC4011 8*NiMh 1900mAh";
@@ -47,7 +51,7 @@ uint16_t EEMEM adc_vbat_cal = 9945;
 uint8_t EEMEM main_OnBootOutput = (1 << POWERPORT_HDD);
 uint16_t EEMEM main_OnBootDelay_s = 15;
 uint16_t EEMEM main_daemon_timeout_s = 150;
-uint8_t EEMEM main_error_recoverable = ((1 << MAIN_ERROR_DAEMON_TIMEOUT) | (1 << MAIN_ERROR_PIPO_DAEMON));
+uint8_t EEMEM main_error_recoverable = ((1 << MAIN_ERROR_TIMEOUT_DAEMON) | (1 << MAIN_ERROR_DAEMON));
 uint8_t EEMEM ups_behavior = UPS_SHUT_DELAYED;
 uint16_t EEMEM ups_delay_s = 180;
 uint16_t EEMEM ups_cut_level_mv = 8000;
@@ -72,6 +76,7 @@ void main_CopyCharToTWIBuffer(const char *source, register8_t *dest);
 void main_SaveSetup(void);
 void main_SendSetup(register8_t *dest);
 void main_PowerReduction(void);
+void main_MapButtonsState(void);
 void CCPWrite( volatile uint8_t *address, uint8_t value );
 
 
@@ -358,10 +363,6 @@ int main(void)
 				result = ina219_GetRawCurrent(&ina219, (int16_t *)(&ina219_result));
 				if (result && ina219.ready) pipo_status.ina219->current = ina219_result;
 				break;
-			case INA219_REQUEST_POWER:
-				result = ina219_GetRawPower(&ina219, &ina219_result);
-				if (result && ina219.ready) pipo_status.ina219->power = ina219_result;
-				break;
 		}
 		if (!result) setbit(*(pipo_status.errors), MAIN_ERROR_INA219);
 		ina219_request++;
@@ -396,9 +397,9 @@ int main(void)
 		}
 		// Check for errors
 		if  (delays_Check(&daemon_timeout_s)) {
-			setbit(*(pipo_status.errors), MAIN_ERROR_DAEMON_TIMEOUT);
+			setbit(*(pipo_status.errors), MAIN_ERROR_TIMEOUT_DAEMON);
 		} else {
-			if (testbit(*(pipo_setup.error_recoverable), MAIN_ERROR_DAEMON_TIMEOUT)) clrbit(*(pipo_status.errors), MAIN_ERROR_DAEMON_TIMEOUT);
+			if (testbit(*(pipo_setup.error_recoverable), MAIN_ERROR_TIMEOUT_DAEMON)) clrbit(*(pipo_status.errors), MAIN_ERROR_TIMEOUT_DAEMON);
 		}
 		if (*(pipo_status.errors) != last_error) {
 			pidaemon_SetRequest();
@@ -427,7 +428,7 @@ ISR(RTC_OVF_vect)
 	delays_Update(&delay_after_shutdown_ms, MAIN_TIMER_KEBOARD_MS);
 	delays_Update(&adc_conversion_ms, MAIN_TIMER_KEBOARD_MS);
 	delays_Update(&timer_rtc_ms, MAIN_TIMER_KEBOARD_MS);
-	if (delays_Check(&adc_conversion_ms)) setbit(*(pipo_status.errors), MAIN_ERROR_ADC_TIMEOUT);
+	if (delays_Check(&adc_conversion_ms)) setbit(*(pipo_status.errors), MAIN_ERROR_TIMEOUT_ADC);
 	if (delays_Check(&timer_rtc_ms)) {
 		delays_Reset(&timer_rtc_ms);
 		delays_Update(&daemon_timeout_s, 1);
@@ -466,7 +467,12 @@ void twi_SlaveProcessData(void)
 				// ~20us
 				delays_Reset(&daemon_timeout_s);
 				pidaemon_ClearRequest();
+				main_MapButtonsState();
 				main_CopyToTWIBuffer(pipo_status_buffer, twiSlave.sendData);
+				break;
+			case DAEMON_REQUEST_READ_INFO0:
+				// ~20us
+				main_CopyCharToTWIBuffer(DEVICE_INFO_0, twiSlave.sendData);
 				break;
 			case DAEMON_REQUEST_READ_INFO1:
 				// ~20us
@@ -515,7 +521,7 @@ void twi_SlaveProcessData(void)
 				break;
 			case DAEMON_REQUEST_ERROR:
 				// DAEMON_REQUEST_ERROR
-				setbit(*(pipo_status.errors), MAIN_ERROR_PIPO_DAEMON);
+				setbit(*(pipo_status.errors), MAIN_ERROR_DAEMON);
 				break;
 			case DAEMON_REQUEST_SYSTEM_ERROR:
 				// DAEMON_REQUEST_SYSTEM_ERROR
@@ -552,6 +558,15 @@ void twi_SlaveProcessData(void)
 				setbit(*(pipo_status.request), MAIN_REQUEST_SAVE_SETUP);
 				break;
 		}
+	}
+}
+
+void main_MapButtonsState(void)
+{
+	*(pipo_status.buttons_state) = 0;
+	for (int i = 0; i < MAX_KEYBOARD_KEY_HALF; i++) {
+		*(pipo_status.buttons_state) |= pipo_status.buttons->state[2 * i] << (8 * i + 4);
+		*(pipo_status.buttons_state) |= pipo_status.buttons->state[2 * i + 1] << (8 * i);
 	}
 }
 

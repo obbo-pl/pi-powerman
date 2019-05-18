@@ -45,14 +45,15 @@
 #define DELAY_AFTER_RASPI_POWEROFF_MS	((uint16_t)(4000))
 
 #define MAX_KEYBOARD_KEY				8
+#define MAX_KEYBOARD_KEY_HALF			4
 
 enum {
 	MAIN_ERROR_MAIN_CLOCK,
 	MAIN_ERROR_RTC_CLOCK,
 	MAIN_ERROR_INA219,
-	MAIN_ERROR_ADC_TIMEOUT,
-	MAIN_ERROR_PIPO_DAEMON,
-	MAIN_ERROR_DAEMON_TIMEOUT,
+	MAIN_ERROR_TIMEOUT_ADC,
+	MAIN_ERROR_DAEMON,
+	MAIN_ERROR_TIMEOUT_DAEMON,
 	MAIN_ERROR_SYSTEM,
 	MAIN_ERROR_BATTERY_OVERHEAT
 };
@@ -92,12 +93,11 @@ enum {
 	DAEMON_REQUEST_DISCHARGE_STOP	= 0x52
 };
 
-#define INA219_REQUEST_COUNT		4
+#define INA219_REQUEST_COUNT		3
 enum {
 	INA219_REQUEST_BUS_VOLTAGE,
 	INA219_REQUEST_SHUNT_VOLTAGE,
-	INA219_REQUEST_CURRENT,
-	INA219_REQUEST_POWER
+	INA219_REQUEST_CURRENT
 };
 
 enum {
@@ -126,11 +126,11 @@ typedef struct ina219_measurement {
 	uint16_t bus_voltage;
 	uint16_t shunt_voltage;
 	uint16_t current;
-	uint16_t power;
 } PIPO_INA_t;
 
 typedef struct PiPowerman_Status {
 	PIPO_Btn_t *buttons;
+	volatile uint32_t *buttons_state;
 	uint8_t *daemon_state;
 	uint16_t *adc_V_In;
 	uint16_t *adc_V_Bat;
@@ -178,27 +178,30 @@ LPFu16_t lpf_voltage_in;
 LPFu16_t lpf_voltage_battery;
 LPFu16_t lpf_temperature;
 
+const char DEVICE_INFO_0[OUTPUT_BUFFER_SIZE];
 const char DEVICE_INFO_1[OUTPUT_BUFFER_SIZE]; 
 const char DEVICE_INFO_2[OUTPUT_BUFFER_SIZE];
 const char DEVICE_INFO_3[OUTPUT_BUFFER_SIZE];
 
 uint8_t pipo_status_buffer[OUTPUT_BUFFER_SIZE];
+uint8_t pipo_buttons_buffer[MAX_KEYBOARD_KEY];
 uint8_t pipo_setup_buffer[OUTPUT_BUFFER_SIZE];
 uint8_t twi_read_buffer[OUTPUT_BUFFER_SIZE];
 
 inline static void main_MapStatusToBuffer();
 inline static void main_MapStatusToBuffer()
 {
-	pipo_status.buttons = (PIPO_Btn_t *)(pipo_status_buffer);
-	pipo_status.daemon_state = (uint8_t *)(pipo_status_buffer + MAX_KEYBOARD_KEY);
-	pipo_status.adc_V_In = (uint16_t *)(pipo_status_buffer + MAX_KEYBOARD_KEY + 1);
-	pipo_status.adc_V_Bat = (uint16_t *)(pipo_status_buffer + MAX_KEYBOARD_KEY + 3);
-	pipo_status.adc_BAT_Temp = (uint16_t *)(pipo_status_buffer + MAX_KEYBOARD_KEY + 5);
-	pipo_status.output_state = (uint8_t *)(pipo_status_buffer + MAX_KEYBOARD_KEY + 7);
-	pipo_status.ups_state = (uint8_t *)(pipo_status_buffer + MAX_KEYBOARD_KEY + 8);
-	pipo_status.ina219 = (PIPO_INA_t *)(pipo_status_buffer + MAX_KEYBOARD_KEY + 9);
-	pipo_status.errors = (uint8_t *)(pipo_status_buffer + MAX_KEYBOARD_KEY + 17);
-	pipo_status.request = (uint8_t *)(pipo_status_buffer + MAX_KEYBOARD_KEY + 18);
+	pipo_status.buttons = (PIPO_Btn_t *)(pipo_buttons_buffer);
+	pipo_status.buttons_state = (uint32_t *)(pipo_status_buffer);
+	pipo_status.daemon_state = (uint8_t *)(pipo_status_buffer + MAX_KEYBOARD_KEY_HALF);
+	pipo_status.adc_V_In = (uint16_t *)(pipo_status_buffer + MAX_KEYBOARD_KEY_HALF + 1);
+	pipo_status.adc_V_Bat = (uint16_t *)(pipo_status_buffer + MAX_KEYBOARD_KEY_HALF + 3);
+	pipo_status.adc_BAT_Temp = (uint16_t *)(pipo_status_buffer + MAX_KEYBOARD_KEY_HALF + 5);
+	pipo_status.output_state = (uint8_t *)(pipo_status_buffer + MAX_KEYBOARD_KEY_HALF + 7);
+	pipo_status.ups_state = (uint8_t *)(pipo_status_buffer + MAX_KEYBOARD_KEY_HALF + 8);
+	pipo_status.ina219 = (PIPO_INA_t *)(pipo_status_buffer + MAX_KEYBOARD_KEY_HALF + 9);
+	pipo_status.errors = (uint8_t *)(pipo_status_buffer + MAX_KEYBOARD_KEY_HALF + 15);
+	pipo_status.request = (uint8_t *)(pipo_status_buffer + MAX_KEYBOARD_KEY_HALF + 16);
 }
 
 inline static void main_MapSetupToBuffer();

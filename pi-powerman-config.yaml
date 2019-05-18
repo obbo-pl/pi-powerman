@@ -82,7 +82,7 @@ factors:
     bus_voltage: 0.0005
     shunt_voltage: 0.01
     current: 0.1
-    power: 0.002
+    power: 0.001
 
 jobs:
     on_boot:

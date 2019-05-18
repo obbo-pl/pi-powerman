@@ -230,7 +230,7 @@ def check_button_change(buffer, new, hardware, config):
     new_button_history = config['history']
     for button in hardware.buttons['ports']:
         last_state = config['history'][button]
-        new_state = new[hardware.buttons['ports'][button]][0]
+        new_state = new[hardware.buttons['ports'][button]]
         if not(last_state == new_state):
             logger.debug('Button ({})state change: old state: {}, new state: {}'.format(button, last_state, new_state))
             if new_state < len(hardware.buttons['state']):
@@ -806,15 +806,15 @@ class PiPowerExport(object):
     def _to_string_button_state(self, name, state, hardware_states, short_info):
         if name in self.aliases['buttons']:
             name = self.aliases['buttons'][name]
-        if state[0] < len(hardware_states):
-            state_string = hardware_states[state[0]]
+        if state < len(hardware_states):
+            state_string = hardware_states[state]
         else:
-            logger.error('Button ({}): unknown state'.format(name))
+            logger.error('Button ({}): unknown state'.format(name[0]))
             state_string = 'unknown'            
         if short_info:
-            return '({}):{}'.format(name, state_string)
+            return '({}):{}'.format(name[0], state_string)
         else:
-            return '({}) state: {}'.format(name, state_string)
+            return '({}) state: {}'.format(name[0], state_string)
         
     def _to_string_buttons_state(self, data, hardware):
         result = []
@@ -823,7 +823,7 @@ class PiPowerExport(object):
             result = [self.indent + 'Buttons: ']
             hardware_ports_sorted = sorted(hardware['ports'].items(), key=itemgetter(1))
             for i in hardware_ports_sorted:                               
-                result.append(self._to_string_button_state(i[0], data[hardware['ports'][i[0]]], hardware['state'], False) + sep)
+                result.append(self._to_string_button_state(i, data[hardware['ports'][i[0]]], hardware['state'], False) + sep)
         else:
             result.append('No hardware state definition' + len(sep) * '-')
         return ''.join(result)[:-len(sep)]
@@ -928,7 +928,7 @@ class PiPowerExport(object):
         result = []
         hardware_ports_sorted = sorted(hardware['ports'].items(), key=itemgetter(1))
         for i in hardware_ports_sorted:                               
-            result.extend([self._to_string_button_state(i[0], data[hardware['ports'][i[0]]], hardware['state'], True), sep])
+            result.extend([self._to_string_button_state(i, data[hardware['ports'][i]], hardware['state'], True), sep])
         return ''.join(result)[:-len(sep)]
 
     def _hex_to_str(self, h, length=2):
@@ -1120,7 +1120,7 @@ class PiPowerCommand(object):
     
     def set_system_error(self, command):
         # $set_system_error
-        self.buffer.append([self.i2c_request['DAEMON_REQUEST_SYSTEM_ERROR']])
+        self.buffer.append([self.i2c_request['DAEMON_REQUEST_SYSTEM']])
         logger.debug('Command: ({}) added to buffer'.format(command))
  
     def send_keepalive(self, command):
@@ -1418,19 +1418,26 @@ class PiPowerData(object):
             self.raw = []
             for i in data:
                 self.raw.append(i)
-            self.buttons = [[data[0], data[4]], [data[1], data[5]], [data[2], data[6]], [data[3], data[7]]]
-            self.pi_daemon_state = data[8]
-            self.supply_voltage = (data[10] * 0x100 + data[9]) * factors['supply_voltage']
-            self.battery_voltage = (data[12] * 0x100 + data[11]) * factors['battery_voltage']
-            self.battery_temperature = (data[14] * 0x100 + data[13]) * factors['battery_temperature']
-            self.output_state = [data[15]]
-            self.ups_state = data[16]
-            self.bus_voltage = (data[18] * 0x100 + data[17]) * factors['bus_voltage']
-            self.shunt_voltage = (data[20] * 0x100 + data[19]) * factors['shunt_voltage']
-            self.current = (data[22] * 0x100 + data[21]) * factors['current']
-            self.power = (data[24] * 0x100 + data[23]) * factors['power']
-            self.errors = data[25]
-            self.requst = data[26]
+            self.buttons.append((data[0] & 0xf0) >> 4)
+            self.buttons.append(data[0] & 0x0f) 
+            self.buttons.append((data[1] & 0xf0) >> 4)
+            self.buttons.append(data[1] & 0x0f)
+            self.buttons.append((data[2] & 0xf0) >> 4)
+            self.buttons.append(data[2] & 0x0f)
+            self.buttons.append((data[3] & 0xf0) >> 4)
+            self.buttons.append(data[3] & 0x0f)
+            self.pi_daemon_state = data[4]
+            self.supply_voltage = (data[6] * 0x100 + data[5]) * factors['supply_voltage']
+            self.battery_voltage = (data[8] * 0x100 + data[7]) * factors['battery_voltage']
+            self.battery_temperature = (data[10] * 0x100 + data[9]) * factors['battery_temperature']
+            self.output_state = [data[11]]
+            self.ups_state = data[12]
+            self.bus_voltage = (data[14] * 0x100 + data[13]) * factors['bus_voltage']
+            self.shunt_voltage = (data[16] * 0x100 + data[15]) * factors['shunt_voltage']
+            self.current = (data[18] * 0x100 + data[17]) * factors['current']
+            self.power = self.current * self.bus_voltage * factors['power']
+            self.errors = data[19]
+            self.requst = data[20]
             self.ready = True
 
 class PiPowerSetup(object):
