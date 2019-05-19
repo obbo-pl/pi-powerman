@@ -1,9 +1,6 @@
 #example hardware configuration file for pi-powerman.py
 #
-
-features:
-    ups: true
-    
+  
 i2c:
     # 7 bit address (will be left shifted to add the read write bit)
     ADDRESS: 0x55
@@ -18,7 +15,7 @@ setup:
     on_boot_output: 'OUT4'
     on_boot_delay_s: 15
     daemon_timeout_s: 120
-    error_recoverable: 'DAEMON_ERROR, DAEMON_TIMEOUT, BATTERY_OVERHEAT'
+    error_recoverable: 'TIMEOUT_DAEMON, DAEMON, BATTERY_OVERHEAT'
     ups_behavior: 'DELAYED'
     ups_shut_delay_s: 180
     ups_cut_level_mv: 8000 
@@ -44,10 +41,10 @@ errors:
     - 'MAIN_CLOCK'
     - 'RTC_CLOCK'
     - 'INA219'
-    - 'ADC_TIMEOUT'
-    - 'DAEMON_ERROR'
-    - 'DAEMON_TIMEOUT'
-    - 'SYSTEM_ERROR'
+    - 'TIMEOUT_ADC'
+    - 'DAEMON'
+    - 'TIMEOUT_DAEMON'
+    - 'SYSTEM'
     - 'BATTERY_OVERHEAT'
 
 ups:
@@ -106,7 +103,7 @@ requests:
     DAEMON_REQUEST_KEEPALIVE: 0x4b
     DAEMON_REQUEST_ERROR: 0x4c
     DAEMON_REQUEST_CLEAR_ERROR: 0x4d
-    DAEMON_REQUEST_SYSTEM_ERROR: 0x4e
+    DAEMON_REQUEST_SYSTEM: 0x4e
     DAEMON_REQUEST_DISABLE_CHARGE: 0x4f
     DAEMON_REQUEST_ENABLE_CHARGE: 0x50
     DAEMON_REQUEST_DISCHARGE_START: 0x51

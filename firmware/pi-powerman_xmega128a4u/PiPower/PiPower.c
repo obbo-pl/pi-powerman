@@ -34,13 +34,13 @@ FUSES = {
 	.FUSEBYTE5 = 0xE9,  /* EESAVE and BOD Level */
 };
 
-#define DATA_FRAME_FORMAT		"1"
-#define UPS_PRESENCE			"1"
-#define BUTTONS_COUNT			"4"
-#define OUTPUTS_COUNT			"4"
+#define DATA_FRAME_FORMAT		0x01
+#define UPS_PRESENCE			0x01
+#define BUTTONS_COUNT			0x04
+#define OUTPUTS_COUNT			0x04
 #define VERSION_MAJOR			"0"
 #define VERISON_MINOR			"8"
-const char DEVICE_INFO_0[OUTPUT_BUFFER_SIZE]	PROGMEM = DATA_FRAME_FORMAT UPS_PRESENCE BUTTONS_COUNT OUTPUTS_COUNT;
+const char DEVICE_INFO_0[OUTPUT_BUFFER_SIZE]	PROGMEM = {DATA_FRAME_FORMAT, UPS_PRESENCE, BUTTONS_COUNT, OUTPUTS_COUNT};
 const char DEVICE_INFO_1[OUTPUT_BUFFER_SIZE]	PROGMEM = "HW: Pi-Powerman." VERSION_MAJOR "." VERISON_MINOR " "; 
 const char DEVICE_INFO_2[OUTPUT_BUFFER_SIZE]	PROGMEM = "(Build: " __DATE__ " " __TIME__ ")";
 const char DEVICE_INFO_3[OUTPUT_BUFFER_SIZE]	PROGMEM = "UPS: LTC4011 8*NiMh 1900mAh";
@@ -194,6 +194,7 @@ int main(void)
 				delays_Init(&delay_after_shutdown_ms, DELAY_AFTER_SHUTDOWN_MS);
 				main_NewButtonState(KEYBOARD_KEY_PWR, BUTTON_STATE_TURN_OFF_02);
 			}
+			delays_Pause(&daemon_timeout_s);
 		}
 		if (pipo_status.buttons->state[KEYBOARD_KEY_PWR] == BUTTON_STATE_TURN_OFF_02) {
 			if (delays_Check(&delay_after_shutdown_ms)) {
@@ -305,23 +306,23 @@ int main(void)
 			float volt;
 			switch(adc_CurrentInput()) {
 				case ADC_MUX_PiState:
-					*pipo_status.daemon_state = pidaemon_CheckDaemonState(v);
+					*(pipo_status.daemon_state) = pidaemon_CheckDaemonState(v);
 					delays_Update(&adc_maesurement_ready, 1);
 					break;
 				case ADC_MUX_V_In:
-				    *pipo_status.adc_V_In = (uint16_t)((*(pipo_setup.calibration_vin) / 10000.0) * lpfilter_Filter(&lpf_voltage_in, v) * 2500 / 4096);
+				    *(pipo_status.adc_V_In) = (uint16_t)((*(pipo_setup.calibration_vin) / 10000.0) * lpfilter_Filter(&lpf_voltage_in, v) * 2500 / 4096);
 					break;
 				case ADC_MUX_V_Bat:
-					*pipo_status.adc_V_Bat = (uint16_t)((*(pipo_setup.calibration_vbat) / 10000.0) * lpfilter_Filter(&lpf_voltage_battery, v) * 2500 / 4096);
+					*(pipo_status.adc_V_Bat) = (uint16_t)((*(pipo_setup.calibration_vbat) / 10000.0) * lpfilter_Filter(&lpf_voltage_battery, v) * 2500 / 4096);
 					break;
 				case ADC_MUX_BAT_Temp:
 					volt = lpfilter_Filter(&lpf_temperature, v) * 2.5 / 4096;
-					*pipo_status.adc_BAT_Temp = ups_NTCTermistorToKelvin(volt);
+					*(pipo_status.adc_BAT_Temp) = ups_NTCTermistorToKelvin(volt);
 					// incorrect temperature readings can cause an overheating alarm
 					// when the charging is disabled, the temperature measurement is not available
 					if (ups.charge_disabled) {
 						delays_Reset(&adc_maesurement_ready);
-						*pipo_status.adc_BAT_Temp = 0;
+						*(pipo_status.adc_BAT_Temp) = 0;
 					}
 					break;
 			}

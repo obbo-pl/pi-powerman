@@ -4,7 +4,7 @@
 #
 # Author: Krzysztof Markiewicz
 # 2019, www.obbo.pl
-# v.0.8.20190518
+# v.0.8.20190519
 #
 # This program is distributed under the terms of the GNU General Public License v3.0
 #
@@ -99,6 +99,8 @@ def main():
         logger_sched.setLevel(config.log['level'])
     # handle I2C bus
     i2c = PiPowerI2C(hardware.i2c)
+    # get hardware features
+    hardware.get_features(i2c)  
     # get hardware info
     logger.info(get_hardware_info(i2c, hardware.requests, hardware.features))
     # get the firmware configuration, check and update if necessary  
@@ -189,7 +191,7 @@ def get_hardware_info(i2c, requests, features):
     info = []
     info.extend(i2c.read_bus(requests['DAEMON_REQUEST_READ_INFO1']))
     info.extend(i2c.read_bus(requests['DAEMON_REQUEST_READ_INFO2']))
-    if features['ups']:
+    if features['ups_presence']:
         info.extend([0x3b, 0x20])
         info.extend(i2c.read_bus(requests['DAEMON_REQUEST_READ_INFO3']))
     result = ''
@@ -227,7 +229,9 @@ def check_pipower(i2c, source, data, hardware, config, export):
         export.run(source, data)
 
 def check_button_change(buffer, new, hardware, config):
-    new_button_history = config['history']
+    result = config['history']
+    logger.debug('Last button state: {}'.format(config['history']))
+    logger.debug('New button state: {}'.format(new))
     for button in hardware.buttons['ports']:
         last_state = config['history'][button]
         new_state = new[hardware.buttons['ports'][button]]
@@ -243,8 +247,8 @@ def check_button_change(buffer, new, hardware, config):
                         logger.debug('Invoking command set: ({}) for: ({})'.format(config['action'][button][new_state_name], button))
                         command_thread = PiPowerScript(buffer, hardware, config['action'][button][new_state_name], button)
                         command_thread.start()
-            new_button_history[button] = new_state
-    return new_button_history
+            result[button] = new_state
+    return result
 
 def safe_cast(val, to_type, default=None):
     try:
@@ -481,7 +485,7 @@ class PiPowerExport(object):
             self._create_rrd_database(folder, 'pipo_bus-voltage.rrd','DS:voltage:GAUGE:600:0:' + str(max_voltage), step, option, archives)
             self._create_rrd_database(folder, 'pipo_current.rrd','DS:current:GAUGE:600:0:' + str(max_current), step, option, archives)
             self._create_rrd_database(folder, 'pipo_power.rrd','DS:power:GAUGE:600:0:' + str(max_power), step, option, archives)
-            if self.hardware.features['ups']:
+            if self.hardware.features['ups_presence']:
                 self._create_rrd_database(folder, 'pipo_battery-voltage.rrd','DS:voltage:GAUGE:600:0:' + str(max_voltage), step, option, archives)
                 self._create_rrd_database(folder, 'pipo_battery-temperature.rrd','DS:temperature:GAUGE:600:' + str(min_temperature)+ ':' + str(max_temperature), step, option, archives)
         else:
@@ -511,7 +515,7 @@ class PiPowerExport(object):
                 rrdtool.update(path.join(folder, 'pipo_current.rrd'), 'N:' + str(data.current))
             if 'pipo_power.rrd' in self.active_rrd:
                 rrdtool.update(path.join(folder, 'pipo_power.rrd'), 'N:' + str(data.power))
-            if self.hardware.features['ups']:
+            if self.hardware.features['ups_presence']:
                 if 'pipo_battery-voltage.rrd' in self.active_rrd:
                     rrdtool.update(path.join(folder, 'pipo_battery-voltage.rrd'), 'N:' + str(data.battery_voltage))
                 if 'pipo_battery-temperature.rrd' in self.active_rrd:
@@ -524,7 +528,7 @@ class PiPowerExport(object):
             mode = ['--slope-mode', '-l 0',]
             # daily
             battery_voltage = []
-            if self.hardware.features['ups']:
+            if self.hardware.features['ups_presence']:
                 battery_voltage = ['DEF:battery=' + path.join(folder, 'pipo_battery-voltage.rrd') + ':voltage:AVERAGE',
                     'LINE3:battery#00ffff:Battery voltage(V)\t',
                     'GPRINT:battery:LAST:Cur\: %5.1lf(V)',
@@ -557,7 +561,7 @@ class PiPowerExport(object):
                 'GPRINT:power:MAX:Max\: %5.1lf(W)',
                 'GPRINT:power:MIN:Min\: %5.1lf(W)\t\t\t')
 
-            if self.hardware.features['ups']:
+            if self.hardware.features['ups_presence']:
                 ret = rrdtool.graph(path.join(folder, 'pipo_temperature_d.png'), '--start', '-1d', width, mode,
                     'DEF:temperature=' + path.join(folder, 'pipo_battery-temperature.rrd') + ':temperature:AVERAGE', 
                     'LINE1:temperature#0000ff:Battery temperature(' + self.temperature_unit_string + ')',
@@ -567,7 +571,7 @@ class PiPowerExport(object):
 
             # monthly
             battery_voltage = []
-            if self.hardware.features['ups']:
+            if self.hardware.features['ups_presence']:
                 battery_voltage = ['DEF:battery=' + path.join(folder, 'pipo_battery-voltage.rrd') + ':voltage:AVERAGE',
                     'LINE3:battery#00ffff:Battery voltage(V)\t',
                     'GPRINT:battery:LAST:Cur\: %5.1lf(V)',
@@ -600,7 +604,7 @@ class PiPowerExport(object):
                 'GPRINT:power:MAX:Max\: %5.1lf(W)',
                 'GPRINT:power:MIN:Min\: %5.1lf(W)\t\t\t')
 
-            if self.hardware.features['ups']:
+            if self.hardware.features['ups_presence']:
                 ret = rrdtool.graph(path.join(folder, 'pipo_temperature_m.png'), '--start', '-1m', width, mode,
                     'DEF:temperature=' + path.join(folder, 'pipo_battery-temperature.rrd') + ':temperature:AVERAGE',
                     'LINE1:temperature#0000ff:Battery temperature(' + self.temperature_unit_string + ')',
@@ -665,7 +669,7 @@ class PiPowerExport(object):
         if 'report_outputs_state' in self.setup:
             if self.setup['report_outputs_state']:
                 result.append(self._to_string_power_outputs_state(data.output_state, self.hardware.outputs))
-        if self.hardware.features['ups']:
+        if self.hardware.features['ups_presence']:
             if 'report_ups_state' in self.setup:
                 if self.setup['report_ups_state']:
                     result.append(self._to_string_ups_state(data.ups_state, self.hardware.ups))
@@ -748,7 +752,7 @@ class PiPowerExport(object):
         result.append(self._to_csv_measure(data.current) + sep)
         result.append(self._to_csv_measure(data.power) + sep)
         result.append(self._to_csv_power_outputs_state(data.output_state, self.hardware.outputs) + sep)
-        if self.hardware.features['ups']:
+        if self.hardware.features['ups_presence']:
             result.append(self._to_csv_ups_state(data.ups_state, self.hardware.ups) + sep)
             result.append(self._to_csv_measure(data.battery_voltage) + sep)
             result.append(self._to_csv_measure(self._convert_temperature(data.battery_temperature)) + sep)
@@ -762,7 +766,7 @@ class PiPowerExport(object):
                 try:
                     with open(file_name, 'w') as file:
                         file.write('Date;Time;Buttons;Supply voltage [V];Bus voltage [V];Shunt voltage [mV];Current [mA];Power [W];Outputs;')
-                        if self.hardware.features['ups']:
+                        if self.hardware.features['ups_presence']:
                             file.write('UPS state;Battery voltage [V];Battery temperature [' + self.temperature_unit_string + '];')
                         file.write('Errors;\n')
                         file.close()
@@ -1349,7 +1353,11 @@ class PiPowerConfig(object):
 
 class PiPowerHardware(object):
     def __init__(self):
-        self.features = {}
+        self.features = {
+            'version': 1,
+            'ups_presence': False,
+            'buttons_count': 1,
+            'outputs_count': 1}
         self.i2c = {}
         self.outputs = {}
         self.daemon = {}
@@ -1371,7 +1379,6 @@ class PiPowerHardware(object):
                 except yaml.YAMLError as exc:
                     logger.error('When opennig {} YAML config file: {}'.format(config_file_name, exc)) 
                     result = False
-            self.features = self.get_section('features', cfg, config_file_name)
             self.i2c = self.get_section('i2c', cfg, config_file_name)
             self.outputs = self.get_section('outputs', cfg, config_file_name)
             self.daemon = self.get_section('daemon', cfg, config_file_name)
@@ -1385,6 +1392,18 @@ class PiPowerHardware(object):
             logger.error('Can\'t find file: "{}"'.format(config_file_name))
             result = False
         return result
+        
+    def get_features(self, i2c):
+        info = []
+        info.extend(i2c.read_bus(self.requests['DAEMON_REQUEST_READ_INFO0']))
+        logger.debug('Hardware features info: "{}"'.format(info))
+        self.features['version'] = info[0]
+        if info[1] > 0:
+            self.features['ups_presence'] = True
+        else:
+            self.features['ups_presence'] = False
+        self.features['buttons_count'] = info[2]
+        self.features['outputs_count'] = info[3]
         
     def get_section(self, section, cfg, file):
         if section in cfg:
@@ -1418,6 +1437,7 @@ class PiPowerData(object):
             self.raw = []
             for i in data:
                 self.raw.append(i)
+            self.buttons = []
             self.buttons.append((data[0] & 0xf0) >> 4)
             self.buttons.append(data[0] & 0x0f) 
             self.buttons.append((data[1] & 0xf0) >> 4)
