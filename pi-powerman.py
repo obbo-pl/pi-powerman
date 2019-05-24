@@ -742,22 +742,21 @@ class PiPowerExport(object):
 
     def _csv_update(self, data):
         result = []
-        sep = self.csv_separator
-        result.append(datetime.datetime.now().strftime('%Y-%m-%d') + sep)
-        result.append(datetime.datetime.now().strftime('%H:%M:%S') + sep)
-        result.append(self._to_csv_buttons_state(data.buttons, self.hardware.buttons) + sep)
-        result.append(self._to_csv_measure(data.supply_voltage) + sep)
-        result.append(self._to_csv_measure(data.bus_voltage) + sep)
-        result.append(self._to_csv_measure(data.shunt_voltage) + sep)
-        result.append(self._to_csv_measure(data.current) + sep)
-        result.append(self._to_csv_measure(data.power) + sep)
-        result.append(self._to_csv_power_outputs_state(data.output_state, self.hardware.outputs) + sep)
+        result.append(datetime.datetime.now().strftime('%Y-%m-%d'))
+        result.append(datetime.datetime.now().strftime('%H:%M:%S'))
+        result.append(self._to_csv_buttons_state(data.buttons, self.hardware.buttons))
+        result.append(self._to_csv_measure(data.supply_voltage))
+        result.append(self._to_csv_measure(data.bus_voltage))
+        result.append(self._to_csv_measure(data.shunt_voltage))
+        result.append(self._to_csv_measure(data.current))
+        result.append(self._to_csv_measure(data.power))
+        result.append(self._to_csv_power_outputs_state(data.output_state, self.hardware.outputs))
         if self.hardware.features['ups_presence']:
-            result.append(self._to_csv_ups_state(data.ups_state, self.hardware.ups) + sep)
-            result.append(self._to_csv_measure(data.battery_voltage) + sep)
-            result.append(self._to_csv_measure(self._convert_temperature(data.battery_temperature)) + sep)
-        result.append(self._to_csv_errors(data.errors, self.hardware.errors) + sep)
-        return ''.join(result)
+            result.append(self._to_csv_ups_state(data.ups_state, self.hardware.ups))
+            result.append(self._to_csv_measure(data.battery_voltage))
+            result.append(self._to_csv_measure(self._convert_temperature(data.battery_temperature)))
+        result.append(self._to_csv_errors(data.errors, self.hardware.errors))
+        return self.csv_separator.join(result)
         
     def _csv_save(self, report):
         if path.isdir(self.setup['csv_folder']):
@@ -784,28 +783,25 @@ class PiPowerExport(object):
             logger.error('Can\'t find folder: "{}"'.format(self.setup['csv_folder']))
 
     def _to_string_raw_data(self, raw):
-        result = [self.indent + 'Raw data: ']
-        sep = ' '
+        result = []
         for i in raw:
-            result.extend([self._hex_to_str(i), sep])
-        return ''.join(result)[:-len(sep)] 
+            result.append(self._hex_to_str(i))
+        return '{}Raw data: {}'.format(self.indent, ' '.join(result)) 
         
     def _to_string_ups_state(self, state, hardware):
         result = []
         if 'state' in hardware:
             label = hardware['state']
-            result = [self.indent + 'UPS state: ']
             no_info = True
-            sep = ', '
             for i in range(0, len(label), 1):
                 if not(state & (1 << i)):
                     no_info = False
-                    result.extend([label[i], sep])
+                    result.append(label[i])
             if no_info:
-                result.extend(['NOT READY', len(sep) * '-'])
+                result.append('NOT READY')
         else:
-            result.extend(['No hardware state definition', len(sep) * '-'])
-        return ''.join(result)[:-len(sep)]
+            result.append('No hardware state definition')
+        return '{}UPS state: {}'.format(self.indent, ', '.join(result))
 
     def _to_string_button_state(self, name, state, hardware_states, short_info):
         if name in self.aliases['buttons']:
@@ -868,17 +864,16 @@ class PiPowerExport(object):
         return self.indent + '{} = {:4.1f}{}'.format(name, value, unit)
       
     def _to_string_errors(self, state, hardware):
-        sep = ', '
         label = hardware
-        result = [self.indent + 'Errors: ']
+        result = []
         no_errors = True
         for i in range(0, len(label), 1):
             if state & (1 << i):
                 no_errors = False
-                result.extend([label[i], sep])
+                result.append(label[i])
         if no_errors:
-            result.extend(['No errors', len(sep) * '-'])
-        return ''.join(result)[:-len(sep)]
+            result.append('No errors')
+        return '{}Errors: {}'.format(self.indent, ', '.join(result))
         
     def _to_csv_measure(self, value):
         result = '{:.1f}'.format(value)
@@ -888,44 +883,40 @@ class PiPowerExport(object):
         return result
         
     def _to_csv_errors(self, state, hardware):
-        sep = ','
         result = []
         label = hardware
         no_errors = True
         for i in range(0, len(label), 1):
             if state & (1 << i):
                 no_errors = False
-                result.extend([label[i], sep])
+                result.append(label[i])
         if no_errors:
-            result.extend(['No errors', len(sep) * '-'])
-        return ''.join(result)[:-len(sep)]  
+            result.append('No errors')
+        return ','.join(result)  
       
     def _to_csv_ups_state(self, state, hardware):
-        sep = ','
         result = []
         label = hardware['state']
         no_info = True
         for i in range(0, len(label), 1):
             if not(state & (1 << i)):
                 no_info = False
-                result.extend([label[i], sep])
+                result.append(label[i])
         if no_info:
-            result.extend(['NOT READY', len(sep) * '-'])
-        return ''.join(result)[:-len(sep)]
+            result.append('NOT READY')
+        return ','.join(result)
       
     def _to_csv_power_outputs_state(self, state, hardware):
-        sep = ','
         result = []
         for i in hardware['ports']:                            
-            result.extend([self._to_string_power_output_state(i, state, hardware['state'], True), sep])
-        return ''.join(result)[:-len(sep)]
+            result.append(self._to_string_power_output_state(i, state, hardware['state'], True))
+        return ','.join(result)
 
     def _to_csv_buttons_state(self, data, hardware):
-        sep = ','
         result = []
         for i in hardware['ports']:                               
-            result.extend([self._to_string_button_state(i[0], data[i[1]], hardware['state'], True), sep])
-        return ''.join(result)[:-len(sep)]
+            result.append(self._to_string_button_state(i[0], data[i[1]], hardware['state'], True))
+        return ','.join(result)
 
     def _hex_to_str(self, h, length=2):
         s = ''.join([length * '0', str(hex(h))[2:]])
@@ -1353,7 +1344,7 @@ class PiPowerConfig(object):
 class PiPowerHardware(object):
     def __init__(self):
         self.MAX_BUTTONS_COUNT = 8
-        self.MAX_OUTPUT_COUNT = 8
+        self.MAX_OUTPUTS_COUNT = 8
         self.features = {
             'version': 1,
             'ups_presence': False,
@@ -1384,7 +1375,7 @@ class PiPowerHardware(object):
             self.outputs = self.get_section('outputs', cfg, config_file_name)
             if 'ports' in self.outputs:
                 hardware_ports_sorted = sorted(self.outputs['ports'].items(), key=itemgetter(1))
-                self.outputs['ports'] = hardware_ports_sorted[:self.MAX_OUTPUT_COUNT]              
+                self.outputs['ports'] = hardware_ports_sorted[:self.MAX_OUTPUTS_COUNT]              
             self.daemon = self.get_section('daemon', cfg, config_file_name)
             self.errors = self.get_section('errors', cfg, config_file_name)
             self.ups = self.get_section('ups', cfg, config_file_name)
@@ -1414,8 +1405,8 @@ class PiPowerHardware(object):
             self.features['buttons_count'] = self.MAX_BUTTONS_COUNT
         self.buttons['ports'] = self.buttons['ports'][:self.features['buttons_count']]
         self.features['outputs_count'] = info[3]
-        if self.features['outputs_count']  > self.MAX_OUTPUT_COUNT:
-            self.features['outputs_count']  = self.MAX_OUTPUT_COUNT
+        if self.features['outputs_count']  > self.MAX_OUTPUTS_COUNT:
+            self.features['outputs_count']  = self.MAX_OUTPUTS_COUNT
         self.outputs['ports'] = self.outputs['ports'][:self.features['outputs_count']]
         
     def get_section(self, section, cfg, file):
