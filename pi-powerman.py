@@ -233,21 +233,21 @@ def check_button_change(buffer, new, hardware, config):
     logger.debug('Last button state: {}'.format(config['history']))
     logger.debug('New button state: {}'.format(new))
     for button in hardware.buttons['ports']:
-        last_state = config['history'][button]
-        new_state = new[hardware.buttons['ports'][button]]
+        last_state = config['history'][button[0]]
+        new_state = new[button[1]]
         if not(last_state == new_state):
             logger.debug('Button ({})state change: old state: {}, new state: {}'.format(button, last_state, new_state))
             if new_state < len(hardware.buttons['state']):
                 new_state_name = hardware.buttons['state'][new_state]
             else:
                 new_state_name = 'unknown'
-            if button in config['action']:
-                if not(config['action'][button] is None):
-                    if new_state_name in config['action'][button]:
-                        logger.debug('Invoking command set: ({}) for: ({})'.format(config['action'][button][new_state_name], button))
-                        command_thread = PiPowerScript(buffer, hardware, config['action'][button][new_state_name], button)
+            if button[0] in config['action']:
+                if not(config['action'][button[0]] is None):
+                    if new_state_name in config['action'][button[0]]:  # <-------------------------------------------------
+                        logger.debug('Invoking command set: ({}) for: ({})'.format(config['action'][button[0]][new_state_name], button))
+                        command_thread = PiPowerScript(buffer, hardware, config['action'][button[0]][new_state_name], button)
                         command_thread.start()
-            result[button] = new_state
+            result[button[0]] = new_state
     return result
 
 def safe_cast(val, to_type, default=None):
@@ -813,24 +813,21 @@ class PiPowerExport(object):
         if state < len(hardware_states):
             state_string = hardware_states[state]
         else:
-            logger.error('Button ({}): unknown state'.format(name[0]))
+            logger.error('Button ({}): unknown state'.format(name))
             state_string = 'unknown'            
         if short_info:
-            return '({}):{}'.format(name[0], state_string)
+            return '({}):{}'.format(name, state_string)
         else:
-            return '({}) state: {}'.format(name[0], state_string)
+            return '({}) state: {}'.format(name, state_string)
         
     def _to_string_buttons_state(self, data, hardware):
         result = []
-        sep = '; '
         if 'state' in hardware:
-            result = [self.indent + 'Buttons: ']
-            hardware_ports_sorted = sorted(hardware['ports'].items(), key=itemgetter(1))
-            for i in hardware_ports_sorted:                               
-                result.append(self._to_string_button_state(i, data[hardware['ports'][i[0]]], hardware['state'], False) + sep)
+            for i in hardware['ports']: 
+                result.append(self._to_string_button_state(i[0], data[i[1]], hardware['state'], False))
         else:
-            result.append('No hardware state definition' + len(sep) * '-')
-        return ''.join(result)[:-len(sep)]
+            result.append('No hardware state definition')
+        return '{}Buttons: {}'.format(self.indent, '; '.join(result))
         
     def _to_string_pi_daemon_state(self, state, hardware):
         result = []
@@ -845,30 +842,27 @@ class PiPowerExport(object):
             result.append('No hardware state definition')
         return ''.join(result)
         
-    def _to_string_power_output_state(self, name, state, hardware, short_info):
-        label = hardware['state']
-        if state[0] & (1 << hardware['ports'][name]):
-            result = label[1]
+    def _to_string_power_output_state(self, name, state, hardware_states, short_info):
+        if state[0] & (1 << name[1]):
+            result = hardware_states[1]
         else:
-            result = label[0]        
-        if name in self.aliases['outputs']:
-            name = self.aliases['outputs'][name]
+            result = hardware_states[0]      
+        name_ = name[0]
+        if name[0] in self.aliases['outputs']:
+            name_ = self.aliases['outputs'][name[0]]
         if short_info:
-            return '({}):{}'.format(name, result)
+            return '({}):{}'.format(name_, result)
         else:
-            return '({}) state: {}'.format(name, result)
+            return '({}) state: {}'.format(name_, result)
         
     def _to_string_power_outputs_state(self, state, hardware):
         result =[]
-        sep = '; '
         if 'state' in hardware:        
-            result = [self.indent + 'Outputs: ']
-            hardware_ports_sorted = sorted(hardware['ports'].items(), key=itemgetter(1))
-            for i in hardware_ports_sorted:                            
-                result.extend([self._to_string_power_output_state(i[0], state, hardware, False), sep])
+            for i in hardware['ports']:  
+                result.append(self._to_string_power_output_state(i, state, hardware['state'], False))
         else:
-            result.extend(['No hardware state definition', len(sep) * '-'])
-        return ''.join(result)[:-len(sep)]
+            result.append('No hardware state definition')
+        return '{}Outputs: {}'.format(self.indent, '; '.join(result))
         
     def _to_string_measure(self, name, value, unit):
         return self.indent + '{} = {:4.1f}{}'.format(name, value, unit)
@@ -922,17 +916,15 @@ class PiPowerExport(object):
     def _to_csv_power_outputs_state(self, state, hardware):
         sep = ','
         result = []
-        hardware_ports_sorted = sorted(hardware['ports'].items(), key=itemgetter(1))
-        for i in hardware_ports_sorted:                            
-            result.extend([self._to_string_power_output_state(i[0], state, hardware, True), sep])
+        for i in hardware['ports']:                            
+            result.extend([self._to_string_power_output_state(i, state, hardware['state'], True), sep])
         return ''.join(result)[:-len(sep)]
 
     def _to_csv_buttons_state(self, data, hardware):
         sep = ','
         result = []
-        hardware_ports_sorted = sorted(hardware['ports'].items(), key=itemgetter(1))
-        for i in hardware_ports_sorted:                               
-            result.extend([self._to_string_button_state(i, data[hardware['ports'][i]], hardware['state'], True), sep])
+        for i in hardware['ports']:                               
+            result.extend([self._to_string_button_state(i[0], data[i[1]], hardware['state'], True), sep])
         return ''.join(result)[:-len(sep)]
 
     def _hex_to_str(self, h, length=2):
@@ -1090,14 +1082,17 @@ class PiPowerCommand(object):
         params = command.split(' ')
         success = False
         if len(params) >= 3:
-            if params[1] in self.hardware.outputs['ports']:
-                port = 1 << self.hardware.outputs['ports'][params[1]]
-                if params[2] in self.hardware.outputs['state']:
-                    state = 0
-                    state = self.hardware.outputs['state'].index(params[2]) << self.hardware.outputs['ports'][params[1]]
-                    self.buffer.append([self.i2c_request['DAEMON_REQUEST_OUTPUT'], port, state]) 
-                    success = True
-                    logger.debug('Command: ({}) added to buffer'.format(command))
+            for port in self.hardware.outputs['ports']:
+                if params[1] == port[0]:
+                    bitmask = 1 << port[1]
+                    if params[2] in self.hardware.outputs['state']:
+                        state = 0
+                        state = self.hardware.outputs['state'].index(params[2]) << port[1]
+                        self.buffer.append([self.i2c_request['DAEMON_REQUEST_OUTPUT'], bitmask, state]) 
+                        success = True
+                        logger.debug('Command: ({}) added to buffer'.format(command))
+                    else:
+                        logger.warning('No {} in known states'.format(params[2]))
         if not(success):
             logger.warning('Command: ({}) can\'t be added to buffer'.format(command))
        
@@ -1107,13 +1102,15 @@ class PiPowerCommand(object):
         params = command.split(' ')
         success = False
         if len(params) >= 3:
-            if params[1] in self.hardware.buttons['ports']:
-                port = self.hardware.buttons['ports'][params[1]]
-                if params[2] in self.hardware.buttons['state']:
-                    new_state = self.hardware.buttons['state'].index(params[2])
-                    self.buffer.append([self.i2c_request['DAEMON_REQUEST_BUTTON'], port, new_state])
-                    success = True
-                    logger.debug('Command: ({}) added to buffer'.format(command))
+            for port in self.hardware.buttons['ports']:
+                if params[1] == port[0]:
+                    if params[2] in self.hardware.buttons['state']:
+                        new_state = self.hardware.buttons['state'].index(params[2])
+                        self.buffer.append([self.i2c_request['DAEMON_REQUEST_BUTTON'], port[1], new_state])
+                        success = True
+                        logger.debug('Command: ({}) added to buffer'.format(command))
+                    else:
+                        logger.warning('No {} in known states'.format(params[2]))
         if not(success):
             logger.warning('Command: ({}) can\'t be added to buffer'.format(command))
         
@@ -1138,14 +1135,16 @@ class PiPowerCommand(object):
         new_state = 0
         success = False
         if len(params) >= 2:
-            if params[1] in self.hardware.buttons['ports']:
-                port = self.hardware.buttons['ports'][params[1]]
-                if len(params) >= 3:
-                    if params[2] in self.hardware.buttons['state']:
-                        new_state = self.hardware.buttons['state'].index(params[2])
-                self.buffer.append([self.i2c_request['DAEMON_REQUEST_PRESS'], port, new_state])
-                success = True
-                logger.debug('Command: ({}) added to buffer'.format(command))
+            for port in self.hardware.buttons['ports']:
+                if params[1] == port[0]:
+                    if len(params) >= 3:
+                        if params[2] in self.hardware.buttons['state']:
+                            new_state = self.hardware.buttons['state'].index(params[2])
+                        else:
+                            logger.warning('No {} in known states'.format(params[2]))
+                    self.buffer.append([self.i2c_request['DAEMON_REQUEST_PRESS'], port[1], new_state])
+                    success = True
+                    logger.debug('Command: ({}) added to buffer'.format(command))
         if not(success):
             logger.warning('Command: ({}) can\'t be added to buffer'.format(command))
         
@@ -1333,7 +1332,7 @@ class PiPowerConfig(object):
                     self.buttons = self.get_section('buttons', cfg, config_file_name)
                     self.buttons['history'] = {}
                     for i in hardware.buttons['ports']:
-                        self.buttons['history'][i] = 0
+                        self.buttons['history'][i[0]] = 0
                     temp = self.get_section('jobs', cfg, config_file_name)
                     if not(temp is None):
                         for i in temp:
@@ -1353,6 +1352,8 @@ class PiPowerConfig(object):
 
 class PiPowerHardware(object):
     def __init__(self):
+        self.MAX_BUTTONS_COUNT = 8
+        self.MAX_OUTPUT_COUNT = 8
         self.features = {
             'version': 1,
             'ups_presence': False,
@@ -1381,10 +1382,16 @@ class PiPowerHardware(object):
                     result = False
             self.i2c = self.get_section('i2c', cfg, config_file_name)
             self.outputs = self.get_section('outputs', cfg, config_file_name)
+            if 'ports' in self.outputs:
+                hardware_ports_sorted = sorted(self.outputs['ports'].items(), key=itemgetter(1))
+                self.outputs['ports'] = hardware_ports_sorted[:self.MAX_OUTPUT_COUNT]              
             self.daemon = self.get_section('daemon', cfg, config_file_name)
             self.errors = self.get_section('errors', cfg, config_file_name)
             self.ups = self.get_section('ups', cfg, config_file_name)
             self.buttons = self.get_section('buttons', cfg, config_file_name)
+            if 'ports' in self.buttons:
+                hardware_ports_sorted = sorted(self.buttons['ports'].items(), key=itemgetter(1))
+                self.buttons['ports'] = hardware_ports_sorted[:self.MAX_BUTTONS_COUNT]
             self.requests = self.get_section('requests', cfg, config_file_name)
             self.setup = self.get_section('setup', cfg, config_file_name)
             logger.info('Hardware setup ({}) loaded'.format(config_file_name))
@@ -1403,7 +1410,13 @@ class PiPowerHardware(object):
         else:
             self.features['ups_presence'] = False
         self.features['buttons_count'] = info[2]
+        if self.features['buttons_count'] > self.MAX_BUTTONS_COUNT:
+            self.features['buttons_count'] = self.MAX_BUTTONS_COUNT
+        self.buttons['ports'] = self.buttons['ports'][:self.features['buttons_count']]
         self.features['outputs_count'] = info[3]
+        if self.features['outputs_count']  > self.MAX_OUTPUT_COUNT:
+            self.features['outputs_count']  = self.MAX_OUTPUT_COUNT
+        self.outputs['ports'] = self.outputs['ports'][:self.features['outputs_count']]
         
     def get_section(self, section, cfg, file):
         if section in cfg:
@@ -1516,7 +1529,9 @@ class PiPowerSetup(object):
         result = 0
         outputs_list = list.split(',')
         for i in outputs_list:
-            result += 1 << self.hw_outputs['ports'][i.strip()]
+            for j in self.hw_outputs['ports']:
+                if i == j[0]:
+                    result += 1 << j[1]
         return result
        
     def _ups_to_byte(self, list):

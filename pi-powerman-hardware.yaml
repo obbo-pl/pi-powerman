@@ -27,6 +27,10 @@ outputs:
         OUT2: 1
         OUT3: 2
         OUT4: 3
+        OUT5: 4
+        OUT6: 5
+        OUT7: 6
+        OUT8: 7
     state:
         - 'OFF'
         - 'ON'
@@ -72,6 +76,10 @@ buttons:
         SW1: 1
         SW2: 2
         SW3: 3
+        SW4: 4
+        SW5: 5
+        SW6: 6
+        SW7: 7
     state:
         - 'IDLE'
         - 'ON'
