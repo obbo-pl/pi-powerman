@@ -4,7 +4,7 @@
 #
 # Author: Krzysztof Markiewicz
 # 2019, www.obbo.pl
-# v.0.8.20190519
+# v.0.8.20190605
 #
 # This program is distributed under the terms of the GNU General Public License v3.0
 #
@@ -113,7 +113,7 @@ def main():
         hardware_setup.send(i2c)
         time.sleep(1)
     
-    data = PiPowerData()
+    data = PiPowerData(config.factors, config.export['temperature_unit'])
     export = PiPowerExport(hardware, config)
     export.create_rrd()        
     # run on boot task
@@ -224,7 +224,7 @@ def check_request():
        
 def check_pipower(i2c, source, data, hardware, config, export):
     logger.debug('Checking I2C bus on: {}'.format(source))
-    data.set(i2c.read_bus(hardware.requests['DAEMON_REQUEST_READ_STATUS']), config.factors)
+    data.set(i2c.read_bus(hardware.requests['DAEMON_REQUEST_READ_STATUS']))
     if data.ready:
         export.run(source, data)
 
@@ -433,7 +433,6 @@ class PiPowerExport(object):
         self.aliases = dict()
         self.aliases['outputs'] = config.outputs['aliases']
         self.aliases['buttons'] = config.buttons['aliases']
-        self.temperature_unit_string = self._convert_temperature()
         self.csv_separator = ';'
         self.iot = None
         if 'iot' in self.setup['destination']:
@@ -505,6 +504,7 @@ class PiPowerExport(object):
                 self.active_rrd.append(file_name)
 
     def _rrd_data_update(self, data):
+        self.temperature_unit = data.battery_temperature_unit
         folder = self.setup['rrd_folder']
         if path.isdir(folder):
             if 'pipo_supply-voltage.rrd' in self.active_rrd:
@@ -519,7 +519,7 @@ class PiPowerExport(object):
                 if 'pipo_battery-voltage.rrd' in self.active_rrd:
                     rrdtool.update(path.join(folder, 'pipo_battery-voltage.rrd'), 'N:' + str(data.battery_voltage))
                 if 'pipo_battery-temperature.rrd' in self.active_rrd:
-                    rrdtool.update(path.join(folder, 'pipo_battery-temperature.rrd'), 'N:' + str(self._convert_temperature(data.battery_temperature)))
+                    rrdtool.update(path.join(folder, 'pipo_battery-temperature.rrd'), 'N:' + str(data.battery_temperature))
 
     def _rrd_graph_update(self):
         folder = self.setup['rrd_folder']
@@ -564,10 +564,10 @@ class PiPowerExport(object):
             if self.hardware.features['ups_presence']:
                 ret = rrdtool.graph(path.join(folder, 'pipo_temperature_d.png'), '--start', '-1d', width, mode,
                     'DEF:temperature=' + path.join(folder, 'pipo_battery-temperature.rrd') + ':temperature:AVERAGE', 
-                    'LINE1:temperature#0000ff:Battery temperature(' + self.temperature_unit_string + ')',
-                    'GPRINT:temperature:LAST:Cur\: %5.1lf(' + self.temperature_unit_string + ')',
-                    'GPRINT:temperature:MAX:Max\: %5.1lf(' + self.temperature_unit_string + ')',
-                    'GPRINT:temperature:MIN:Min\: %5.1lf(' + self.temperature_unit_string + ')\t\t\t')
+                    'LINE1:temperature#0000ff:Battery temperature(' + self.temperature_unit + ')',
+                    'GPRINT:temperature:LAST:Cur\: %5.1lf(' + self.temperature_unit + ')',
+                    'GPRINT:temperature:MAX:Max\: %5.1lf(' + self.temperature_unit + ')',
+                    'GPRINT:temperature:MIN:Min\: %5.1lf(' + self.temperature_unit + ')\t\t\t')
 
             # monthly
             battery_voltage = []
@@ -607,10 +607,10 @@ class PiPowerExport(object):
             if self.hardware.features['ups_presence']:
                 ret = rrdtool.graph(path.join(folder, 'pipo_temperature_m.png'), '--start', '-1m', width, mode,
                     'DEF:temperature=' + path.join(folder, 'pipo_battery-temperature.rrd') + ':temperature:AVERAGE',
-                    'LINE1:temperature#0000ff:Battery temperature(' + self.temperature_unit_string + ')',
-                    'GPRINT:temperature:LAST:Cur\: %5.1lf(' + self.temperature_unit_string + ')',
-                    'GPRINT:temperature:MAX:Max\: %5.1lf(' + self.temperature_unit_string + ')',
-                    'GPRINT:temperature:MIN:Min\: %5.1lf(' + self.temperature_unit_string + ')\t\t\t')
+                    'LINE1:temperature#0000ff:Battery temperature(' + self.temperature_unit + ')',
+                    'GPRINT:temperature:LAST:Cur\: %5.1lf(' + self.temperature_unit + ')',
+                    'GPRINT:temperature:MAX:Max\: %5.1lf(' + self.temperature_unit + ')',
+                    'GPRINT:temperature:MIN:Min\: %5.1lf(' + self.temperature_unit + ')\t\t\t')
 
     def _iot_publish(self, data):
         values = []
@@ -627,7 +627,7 @@ class PiPowerExport(object):
             if i == 'battery_voltage':
                 value = data.battery_voltage
             if i == 'battery_temperature':
-                value = self._convert_temperature(data.battery_temperature)
+                value = data.battery_temperature
             if i == 'power':
                 value = data.power
             if not(value is None):
@@ -678,7 +678,7 @@ class PiPowerExport(object):
                     result.append(self._to_string_measure('Battery voltage', data.battery_voltage, 'V'))
             if 'report_battery_temperature' in self.setup:
                 if self.setup['report_battery_temperature']:
-                    result.append(self._to_string_measure('Battery temperature', self._convert_temperature(data.battery_temperature), self.temperature_unit_string))
+                    result.append(self._to_string_measure('Battery temperature', data.battery_temperature, data.battery_temperature_unit))
         if 'report_errors' in self.setup:
             if self.setup['report_errors']:
                 result.append(self._to_string_errors(data.errors, self.hardware.errors))
@@ -724,22 +724,6 @@ class PiPowerExport(object):
         for i in report:
             logger.info(i)
 
-    def _convert_temperature(self, temperature_k=None):
-        unit = self.setup['temperature_unit']
-        temperature = 0
-        if not(temperature_k is None):
-            temperature = temperature_k
-        if unit == 'C':
-            temperature = temperature - 273.15
-            unit = '°C'
-        if unit == 'F':
-            temperature = (temperature - 273.15) * 9 / 5  + 32
-            unit = '°F'
-        if temperature_k is None:
-            return unit
-        else:
-            return temperature
-
     def _csv_update(self, data):
         result = []
         result.append(datetime.datetime.now().strftime('%Y-%m-%d'))
@@ -754,7 +738,7 @@ class PiPowerExport(object):
         if self.hardware.features['ups_presence']:
             result.append(self._to_csv_ups_state(data.ups_state, self.hardware.ups))
             result.append(self._to_csv_measure(data.battery_voltage))
-            result.append(self._to_csv_measure(self._convert_temperature(data.battery_temperature)))
+            result.append(self._to_csv_measure(data.battery_temperature))
         result.append(self._to_csv_errors(data.errors, self.hardware.errors))
         return self.csv_separator.join(result)
         
@@ -766,7 +750,7 @@ class PiPowerExport(object):
                     with open(file_name, 'w') as file:
                         file.write('Date;Time;Buttons;Supply voltage [V];Bus voltage [V];Shunt voltage [mV];Current [mA];Power [W];Outputs;')
                         if self.hardware.features['ups_presence']:
-                            file.write('UPS state;Battery voltage [V];Battery temperature [' + self.temperature_unit_string + '];')
+                            file.write('UPS state;Battery voltage [V];Battery temperature [' + self.temperature_unit + '];')
                         file.write('Errors;\n')
                         file.close()
                 except IOError as e:
@@ -1275,6 +1259,14 @@ class PiPowerConfig(object):
             'credential_file': ''}
         self.log = {
             'level': 'INFO'}
+        self.factors_list = [
+            'supply_voltage',
+            'battery_voltage',
+            'battery_temperature',
+            'bus_voltage',
+            'shunt_voltage',
+            'current',
+            'power']    
         self.factors = {
             'supply_voltage': 0.1,
             'battery_voltage': 0.1,
@@ -1319,6 +1311,7 @@ class PiPowerConfig(object):
                     if not(temp is None):
                         for i in temp:
                             self.factors[i] = temp[i]
+                    self._check_factors()
                     self.outputs = self.get_section('outputs', cfg, config_file_name)
                     self.buttons = self.get_section('buttons', cfg, config_file_name)
                     self.buttons['history'] = {}
@@ -1334,6 +1327,16 @@ class PiPowerConfig(object):
             result = False
         return result
 
+    def _check_factors(self):
+        default_value = 0.1
+        for factor in self.factors_list:
+            if not(factor in self.factors):
+                self.factors[factor] = default_value
+                logger.warning('The "{}" factor is not defined.'.format(factor))
+            if self.factors[factor] is None:
+                logger.warning('The "{}" factor has no value.'.format(factor))
+                self.factors[factor] = default_value
+                
     def get_section(self, section, cfg, file):
         if section in cfg:
             return cfg[section]
@@ -1417,30 +1420,17 @@ class PiPowerHardware(object):
             return {}
 
 class PiPowerData(object):
-    def __init__(self):
-        self.raw = []
-        self.buttons = []
-        self.pi_daemon_state = 0
-        self.supply_voltage = 0
-        self.battery_voltage = 0
-        self.battery_temp = 0
-        self.output_state = []
-        self.ups_state = 0
-        self.bus_voltage = 0
-        self.shunt_voltage = 0
-        self.current = 0
-        self.power = 0
-        self.errors = 0
-        self.requst = 0
+    def __init__(self, factors, temperature_unit):
+        self.factors = factors
         self.ready = False
+        self.battery_temperature_unit = self._convert_temperature(temperature_unit)['unit']
             
-    def set(self, data, factors):
-        logger.debug('Extracting RAW data: "{}"'.format(data))
+    def set(self, data):
+        logger.debug('Extracting RAW data: "{}".'.format(data))
         self.ready = False
         if len(data) == 32:
             self.raw = []
-            for i in data:
-                self.raw.append(i)
+            self.raw.extend(data)
             self.buttons = []
             self.buttons.append((data[0] & 0xf0) >> 4)
             self.buttons.append(data[0] & 0x0f) 
@@ -1451,19 +1441,39 @@ class PiPowerData(object):
             self.buttons.append((data[3] & 0xf0) >> 4)
             self.buttons.append(data[3] & 0x0f)
             self.pi_daemon_state = data[4]
-            self.supply_voltage = (data[6] * 0x100 + data[5]) * factors['supply_voltage']
-            self.battery_voltage = (data[8] * 0x100 + data[7]) * factors['battery_voltage']
-            self.battery_temperature = (data[10] * 0x100 + data[9]) * factors['battery_temperature']
+            self.supply_voltage = (data[6] * 0x100 + data[5]) * self.factors['supply_voltage']
+            self.battery_voltage = (data[8] * 0x100 + data[7]) * self.factors['battery_voltage']
+            self.battery_temperature = self._convert_temperature(self.battery_temperature_unit, \
+                (data[10] * 0x100 + data[9]) * self.factors['battery_temperature'])['value']
             self.output_state = [data[11]]
             self.ups_state = data[12]
-            self.bus_voltage = (data[14] * 0x100 + data[13]) * factors['bus_voltage']
-            self.shunt_voltage = (data[16] * 0x100 + data[15]) * factors['shunt_voltage']
-            self.current = (data[18] * 0x100 + data[17]) * factors['current']
-            self.power = self.current * self.bus_voltage * factors['power']
+            self.bus_voltage = (data[14] * 0x100 + data[13]) * self.factors['bus_voltage']
+            self.shunt_voltage = (data[16] * 0x100 + data[15]) * self.factors['shunt_voltage']
+            self.current = (data[18] * 0x100 + data[17]) * self.factors['current']
+            self.power = self.current * self.bus_voltage * self.factors['power']
             self.errors = data[19]
             self.requst = data[20]
             self.ready = True
-
+        
+    def _convert_temperature(self, unit, temperature=None):
+        result = {}
+        if (unit.find('C') == 0) or (unit.find('°C') == 0):
+            if not(temperature is None):
+                result['value'] = temperature - 273.15
+            result['unit'] = '°C'
+        elif (unit.find('F') == 0) or (unit.find('°F') == 0):
+            if not(temperature is None):
+                result['value'] = (temperature - 273.15) * 9 / 5  + 32
+            result['unit'] = '°F'
+        elif unit.find('K') == 0:
+            result['unit'] = 'K'
+            result['value'] = temperature
+        else:
+            result['unit'] =  unit,
+            result['value'] = temperature
+            logger.warning('Unknown temperature unit: "{}".'.format(unit))
+        return result
+        
 class PiPowerSetup(object):
     def __init__(self, hardware):
         self.setup = []
