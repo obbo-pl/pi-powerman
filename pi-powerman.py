@@ -4,7 +4,7 @@
 #
 # Author: Krzysztof Markiewicz
 # 2019, www.obbo.pl
-# v.0.8.20190605
+# v.0.8.20190606
 #
 # This program is distributed under the terms of the GNU General Public License v3.0
 #
@@ -24,7 +24,6 @@ import shlex
 import signal
 import RPi.GPIO as GPIO
 import schedule
-import rrdtool
 # https://pypi.org/project/paho-mqtt/
 import paho.mqtt.client as mqtt
 
@@ -115,7 +114,6 @@ def main():
     
     data = PiPowerData(config.factors, config.export['temperature_unit'])
     export = PiPowerExport(hardware, config)
-    export.create_rrd()        
     # run on boot task
     if 'on_boot' in config.jobs:
         if not(config.jobs['on_boot'] is None):
@@ -422,12 +420,137 @@ class PiPowerI2C(object):
             raw_data = [0, 0]            
         return raw_data
 
+class PiPowerRRD(object):
+    def __init__(self, hardware, config):
+        self.ready = False
+        self.hardware = hardware
+        self.setup = config
+        self.temperature_unit = ''
+        try:
+            import rrdtool
+        except ImportError  as error:
+            logger.error('Import rrdtool problem: "{}"'.format(error))
+        else:
+            self.rrdtool = rrdtool
+            self.ready = True
+            self.active_rrd = []
+        if not(self.ready):
+            logger.warning('RRD not ready')
+        
+    def create_database(self):
+        if self.ready:
+            folder = self.setup['rrd_folder']
+            if path.isdir(folder):
+                step = ['--step', '300']
+                option = ['--no-overwrite']
+                archives = ['RRA:AVERAGE:0.5:1:300', 'RRA:AVERAGE:0.5:1h:31d', 'RRA:AVERAGE:0.5:12h:1y']
+                max_voltage = 100 # volt
+                max_current = 10000 # milliampere
+                max_power = 500 # watt
+                min_temperature = -150 # kelvin, celsius, fahrenheit
+                max_temperature = 400 # kelvin, celsius, fahrenheit
+                self._create_datafile(folder, 'pipo_supply-voltage.rrd','DS:voltage:GAUGE:600:0:' + str(max_voltage), step, option, archives)
+                self._create_datafile(folder, 'pipo_bus-voltage.rrd','DS:voltage:GAUGE:600:0:' + str(max_voltage), step, option, archives)
+                self._create_datafile(folder, 'pipo_current.rrd','DS:current:GAUGE:600:0:' + str(max_current), step, option, archives)
+                self._create_datafile(folder, 'pipo_power.rrd','DS:power:GAUGE:600:0:' + str(max_power), step, option, archives)
+                if self.hardware.features['ups_presence']:
+                    self._create_datafile(folder, 'pipo_battery-voltage.rrd','DS:voltage:GAUGE:600:0:' + str(max_voltage), step, option, archives)
+                    self._create_datafile(folder, 'pipo_battery-temperature.rrd','DS:temperature:GAUGE:600:' + str(min_temperature)+ ':' + str(max_temperature), step, option, archives)
+            else:
+                logger.error('Can\'t find folder: "{}"'.format(folder))
+
+    def _create_datafile(self, folder, file_name, data_source, step, option, archives):
+        full_name = path.join(folder, file_name)
+        if path.isfile(full_name):
+            self.active_rrd.append(file_name)
+            logger.debug('RRD datafile "{}" already exists'.format(full_name))
+        else:
+            try:
+                self.rrdtool.create(full_name, step, option, data_source, archives)
+            except self.rrdtool.OperationalError as e:
+                logger.error('Creating RRD datafile error, value: ({})'.format(e))
+            else:
+                logger.info('New RRD datafile "{}" created'.format(full_name))
+                self.active_rrd.append(file_name)
+
+    def update_database(self, data):
+        if self.ready:
+            self.temperature_unit = data.battery_temperature_unit
+            folder = self.setup['rrd_folder']
+            if path.isdir(folder):
+                if 'pipo_supply-voltage.rrd' in self.active_rrd:
+                    self.rrdtool.update(path.join(folder, 'pipo_supply-voltage.rrd'), 'N:' + str(data.supply_voltage))
+                if 'pipo_bus-voltage.rrd' in self.active_rrd:
+                    self.rrdtool.update(path.join(folder, 'pipo_bus-voltage.rrd'), 'N:' + str(data.bus_voltage))
+                if 'pipo_current.rrd' in self.active_rrd:
+                    self.rrdtool.update(path.join(folder, 'pipo_current.rrd'), 'N:' + str(data.current))
+                if 'pipo_power.rrd' in self.active_rrd:
+                    self.rrdtool.update(path.join(folder, 'pipo_power.rrd'), 'N:' + str(data.power))
+                if self.hardware.features['ups_presence']:
+                    if 'pipo_battery-voltage.rrd' in self.active_rrd:
+                        self.rrdtool.update(path.join(folder, 'pipo_battery-voltage.rrd'), 'N:' + str(data.battery_voltage))
+                    if 'pipo_battery-temperature.rrd' in self.active_rrd:
+                        self.rrdtool.update(path.join(folder, 'pipo_battery-temperature.rrd'), 'N:' + str(data.battery_temperature))
+
+    def update_graph(self):
+        if self.ready:
+            folder = self.setup['rrd_folder']
+            if path.isdir(folder):
+                width = '-w 640'
+                mode = ['--slope-mode', '-l 0',]
+                # daily
+                self._update_graph_period(folder, width, mode, '-1d')
+                # monthly
+                self._update_graph_period(folder, width, mode, '-1m')
+          
+    def _update_graph_period(self, folder, width, mode, period):
+        battery_voltage = []
+        if self.hardware.features['ups_presence']:
+            battery_voltage = ['DEF:battery=' + path.join(folder, 'pipo_battery-voltage.rrd') + ':voltage:AVERAGE',
+                'LINE3:battery#00ffff:Battery voltage(V)\t',
+                'GPRINT:battery:LAST:Cur\: %5.1lf(V)',
+                'GPRINT:battery:MAX:Max\: %5.1lf(V)',
+                'GPRINT:battery:MIN:Min\: %5.1lf(V)\t\t\t']
+        ret = self.rrdtool.graph(path.join(folder, 'pipo_voltage_' + period[1:] + '.png'), '--start', period, width, mode,
+            'DEF:supply=' + path.join(folder, 'pipo_supply-voltage.rrd') + ':voltage:AVERAGE',
+            'DEF:bus=' + path.join(folder, 'pipo_bus-voltage.rrd') + ':voltage:AVERAGE',          
+            'LINE1:supply#0000ff:Supply voltage(V)\t',
+            'GPRINT:supply:LAST:Cur\: %5.1lf(V)',
+            'GPRINT:supply:MAX:Max\: %5.1lf(V)',
+            'GPRINT:supply:MIN:Min\: %5.1lf(V)\t\t\t',
+            'LINE2:bus#00ff00:Bus voltage(V)\t',
+            'GPRINT:bus:LAST:Cur\: %5.1lf(V)',
+            'GPRINT:bus:MAX:Max\: %5.1lf(V)',
+            'GPRINT:bus:MIN:Min\: %5.1lf(V)\t\t\t',
+            battery_voltage)
+                   
+        ret = self.rrdtool.graph(path.join(folder, 'pipo_current_' + period[1:] + '.png'), '--start', period, width, mode,
+            'DEF:current=' + path.join(folder, 'pipo_current.rrd') + ':current:AVERAGE',
+            'LINE1:current#0000ff:Current(mA)',
+            'GPRINT:current:LAST:Cur\: %5.1lf(mA)',
+            'GPRINT:current:MAX:Max\: %5.1lf(mA)',
+            'GPRINT:current:MIN:Min\: %5.1lf(mA)\t\t\t')
+
+        ret = self.rrdtool.graph(path.join(folder, 'pipo_power_' + period[1:] + '.png'), '--start', period, width, mode,
+            'DEF:power=' + path.join(folder, 'pipo_power.rrd') + ':power:AVERAGE',
+            'LINE1:power#0000ff:Power(W)',
+            'GPRINT:power:LAST:Cur\: %5.1lf(W)',
+            'GPRINT:power:MAX:Max\: %5.1lf(W)',
+            'GPRINT:power:MIN:Min\: %5.1lf(W)\t\t\t')
+
+        if self.hardware.features['ups_presence']:
+            ret = self.rrdtool.graph(path.join(folder, 'pipo_temperature_' + period[1:] + '.png'), '--start', period, width, mode,
+                'DEF:temperature=' + path.join(folder, 'pipo_battery-temperature.rrd') + ':temperature:AVERAGE',
+                'LINE1:temperature#0000ff:Battery temperature(' + self.temperature_unit + ')',
+                'GPRINT:temperature:LAST:Cur\: %5.1lf(' + self.temperature_unit + ')',
+                'GPRINT:temperature:MAX:Max\: %5.1lf(' + self.temperature_unit + ')',
+                'GPRINT:temperature:MIN:Min\: %5.1lf(' + self.temperature_unit + ')\t\t\t')
+        
 class PiPowerExport(object):
     def __init__(self, hardware, config):
         self.hardware = hardware
         self.setup = config.export
         self.mqtt = config.mqtt
-        self.active_rrd = []
         self.indent = '\t'
         self.temperature_unit = 'K'
         self.aliases = dict()
@@ -439,7 +562,10 @@ class PiPowerExport(object):
             logger.info('MQTT start')
             self.iot = PiPowerMQTT(self.mqtt)
             self.iot.connect()
-
+        if 'rrd' in self.setup['destination']:
+            self.rrd = PiPowerRRD(self.hardware, self.setup)
+            self.rrd.create_database()
+            
     def __del__(self):
         if 'iot' in self.setup['destination']:
             logger.info('MQTT stop')
@@ -459,158 +585,15 @@ class PiPowerExport(object):
                         if 'log' in destination:
                             self._log_report(report) 
                     if 'rrd' in destination:
-                        self._rrd_data_update(data)
+                        self.rrd.update_database(data)
                         if self.setup['rrd_graph_update']:
-                            self._rrd_graph_update()
+                            self.rrd.update_graph()
                     if 'csv' in destination:
                         self._csv_save(self._csv_update(data))      
                     if 'iot' in destination:
                         self._iot_publish(data)
         else:
             logger.error('Export destination is not defined')
-            
-    def create_rrd(self):
-        folder = self.setup['rrd_folder']
-        if path.isdir(folder):
-            step = ['--step', '300']
-            option = ['--no-overwrite']
-            archives = ['RRA:AVERAGE:0.5:1:300', 'RRA:AVERAGE:0.5:1h:31d', 'RRA:AVERAGE:0.5:12h:1y']
-            max_voltage = 100 # volt
-            max_current = 10000 # milliampere
-            max_power = 500 # watt
-            min_temperature = -150 # kelvin, celsius, fahrenheit
-            max_temperature = 400 # kelvin, celsius, fahrenheit
-            self._create_rrd_database(folder, 'pipo_supply-voltage.rrd','DS:voltage:GAUGE:600:0:' + str(max_voltage), step, option, archives)
-            self._create_rrd_database(folder, 'pipo_bus-voltage.rrd','DS:voltage:GAUGE:600:0:' + str(max_voltage), step, option, archives)
-            self._create_rrd_database(folder, 'pipo_current.rrd','DS:current:GAUGE:600:0:' + str(max_current), step, option, archives)
-            self._create_rrd_database(folder, 'pipo_power.rrd','DS:power:GAUGE:600:0:' + str(max_power), step, option, archives)
-            if self.hardware.features['ups_presence']:
-                self._create_rrd_database(folder, 'pipo_battery-voltage.rrd','DS:voltage:GAUGE:600:0:' + str(max_voltage), step, option, archives)
-                self._create_rrd_database(folder, 'pipo_battery-temperature.rrd','DS:temperature:GAUGE:600:' + str(min_temperature)+ ':' + str(max_temperature), step, option, archives)
-        else:
-            logger.error('Can\'t find folder: "{}"'.format(folder))
-
-    def _create_rrd_database(self, folder, file_name, data_source, step, option, archives):
-        full_name = path.join(folder, file_name)
-        if path.isfile(full_name):
-            self.active_rrd.append(file_name)
-        else:
-            try:
-                rrdtool.create(full_name, step, option, data_source, archives)
-            except rrdtool.OperationalError as e:
-                logger.error('Creating RRD datafile error, value: ({})'.format(e))
-            else:
-                logger.info('New RRD datafile "{}" created'.format(full_name))
-                self.active_rrd.append(file_name)
-
-    def _rrd_data_update(self, data):
-        self.temperature_unit = data.battery_temperature_unit
-        folder = self.setup['rrd_folder']
-        if path.isdir(folder):
-            if 'pipo_supply-voltage.rrd' in self.active_rrd:
-                rrdtool.update(path.join(folder, 'pipo_supply-voltage.rrd'), 'N:' + str(data.supply_voltage))
-            if 'pipo_bus-voltage.rrd' in self.active_rrd:
-                rrdtool.update(path.join(folder, 'pipo_bus-voltage.rrd'), 'N:' + str(data.bus_voltage))
-            if 'pipo_current.rrd' in self.active_rrd:
-                rrdtool.update(path.join(folder, 'pipo_current.rrd'), 'N:' + str(data.current))
-            if 'pipo_power.rrd' in self.active_rrd:
-                rrdtool.update(path.join(folder, 'pipo_power.rrd'), 'N:' + str(data.power))
-            if self.hardware.features['ups_presence']:
-                if 'pipo_battery-voltage.rrd' in self.active_rrd:
-                    rrdtool.update(path.join(folder, 'pipo_battery-voltage.rrd'), 'N:' + str(data.battery_voltage))
-                if 'pipo_battery-temperature.rrd' in self.active_rrd:
-                    rrdtool.update(path.join(folder, 'pipo_battery-temperature.rrd'), 'N:' + str(data.battery_temperature))
-
-    def _rrd_graph_update(self):
-        folder = self.setup['rrd_folder']
-        if path.isdir(folder):
-            width = '-w 640'
-            mode = ['--slope-mode', '-l 0',]
-            # daily
-            battery_voltage = []
-            if self.hardware.features['ups_presence']:
-                battery_voltage = ['DEF:battery=' + path.join(folder, 'pipo_battery-voltage.rrd') + ':voltage:AVERAGE',
-                    'LINE3:battery#00ffff:Battery voltage(V)\t',
-                    'GPRINT:battery:LAST:Cur\: %5.1lf(V)',
-                    'GPRINT:battery:MAX:Max\: %5.1lf(V)',
-                    'GPRINT:battery:MIN:Min\: %5.1lf(V)\t\t\t']
-            ret = rrdtool.graph(path.join(folder, 'pipo_voltage_d.png'), '--start', '-1d', width, mode,
-                'DEF:supply=' + path.join(folder, 'pipo_supply-voltage.rrd') + ':voltage:AVERAGE',
-                'DEF:bus=' + path.join(folder, 'pipo_bus-voltage.rrd') + ':voltage:AVERAGE',
-                'LINE1:supply#0000ff:Supply voltage(V)\t',
-                'GPRINT:supply:LAST:Cur\: %5.1lf(V)',
-                'GPRINT:supply:MAX:Max\: %5.1lf(V)',
-                'GPRINT:supply:MIN:Min\: %5.1lf(V)\t\t\t',
-                'LINE2:bus#00ff00:Bus voltage(V)\t',
-                'GPRINT:bus:LAST:Cur\: %5.1lf(V)',
-                'GPRINT:bus:MAX:Max\: %5.1lf(V)',
-                'GPRINT:bus:MIN:Min\: %5.1lf(V)\t\t\t',
-                battery_voltage)
-                
-            ret = rrdtool.graph(path.join(folder, 'pipo_current_d.png'), '--start', '-1d', width, mode, 
-                'DEF:current=' + path.join(folder, 'pipo_current.rrd') + ':current:AVERAGE',
-                'LINE1:current#0000ff:Current(mA)',
-                'GPRINT:current:LAST:Cur\: %5.1lf(mA)',
-                'GPRINT:current:MAX:Max\: %5.1lf(mA)',
-                'GPRINT:current:MIN:Min\: %5.1lf(mA)\t\t\t')
-
-            ret = rrdtool.graph(path.join(folder, 'pipo_power_d.png'), '--start', '-1d', width, mode,
-                'DEF:power=' + path.join(folder, 'pipo_power.rrd') + ':power:AVERAGE',
-                'LINE1:power#0000ff:Power(W)',
-                'GPRINT:power:LAST:Cur\: %5.1lf(W)',
-                'GPRINT:power:MAX:Max\: %5.1lf(W)',
-                'GPRINT:power:MIN:Min\: %5.1lf(W)\t\t\t')
-
-            if self.hardware.features['ups_presence']:
-                ret = rrdtool.graph(path.join(folder, 'pipo_temperature_d.png'), '--start', '-1d', width, mode,
-                    'DEF:temperature=' + path.join(folder, 'pipo_battery-temperature.rrd') + ':temperature:AVERAGE', 
-                    'LINE1:temperature#0000ff:Battery temperature(' + self.temperature_unit + ')',
-                    'GPRINT:temperature:LAST:Cur\: %5.1lf(' + self.temperature_unit + ')',
-                    'GPRINT:temperature:MAX:Max\: %5.1lf(' + self.temperature_unit + ')',
-                    'GPRINT:temperature:MIN:Min\: %5.1lf(' + self.temperature_unit + ')\t\t\t')
-
-            # monthly
-            battery_voltage = []
-            if self.hardware.features['ups_presence']:
-                battery_voltage = ['DEF:battery=' + path.join(folder, 'pipo_battery-voltage.rrd') + ':voltage:AVERAGE',
-                    'LINE3:battery#00ffff:Battery voltage(V)\t',
-                    'GPRINT:battery:LAST:Cur\: %5.1lf(V)',
-                    'GPRINT:battery:MAX:Max\: %5.1lf(V)',
-                    'GPRINT:battery:MIN:Min\: %5.1lf(V)\t\t\t']
-            ret = rrdtool.graph(path.join(folder, 'pipo_voltage_m.png'), '--start', '-1m', width, mode,
-                'DEF:supply=' + path.join(folder, 'pipo_supply-voltage.rrd') + ':voltage:AVERAGE',
-                'DEF:bus=' + path.join(folder, 'pipo_bus-voltage.rrd') + ':voltage:AVERAGE',          
-                'LINE1:supply#0000ff:Supply voltage(V)\t',
-                'GPRINT:supply:LAST:Cur\: %5.1lf(V)',
-                'GPRINT:supply:MAX:Max\: %5.1lf(V)',
-                'GPRINT:supply:MIN:Min\: %5.1lf(V)\t\t\t',
-                'LINE2:bus#00ff00:Bus voltage(V)\t',
-                'GPRINT:bus:LAST:Cur\: %5.1lf(V)',
-                'GPRINT:bus:MAX:Max\: %5.1lf(V)',
-                'GPRINT:bus:MIN:Min\: %5.1lf(V)\t\t\t',
-                battery_voltage)
-                
-            ret = rrdtool.graph(path.join(folder, 'pipo_current_m.png'), '--start', '-1m', width, mode,
-                'DEF:current=' + path.join(folder, 'pipo_current.rrd') + ':current:AVERAGE',
-                'LINE1:current#0000ff:Current(mA)',
-                'GPRINT:current:LAST:Cur\: %5.1lf(mA)',
-                'GPRINT:current:MAX:Max\: %5.1lf(mA)',
-                'GPRINT:current:MIN:Min\: %5.1lf(mA)\t\t\t')
-
-            ret = rrdtool.graph(path.join(folder, 'pipo_power_m.png'), '--start', '-1m', width, mode,
-                'DEF:power=' + path.join(folder, 'pipo_power.rrd') + ':power:AVERAGE',
-                'LINE1:power#0000ff:Power(W)',
-                'GPRINT:power:LAST:Cur\: %5.1lf(W)',
-                'GPRINT:power:MAX:Max\: %5.1lf(W)',
-                'GPRINT:power:MIN:Min\: %5.1lf(W)\t\t\t')
-
-            if self.hardware.features['ups_presence']:
-                ret = rrdtool.graph(path.join(folder, 'pipo_temperature_m.png'), '--start', '-1m', width, mode,
-                    'DEF:temperature=' + path.join(folder, 'pipo_battery-temperature.rrd') + ':temperature:AVERAGE',
-                    'LINE1:temperature#0000ff:Battery temperature(' + self.temperature_unit + ')',
-                    'GPRINT:temperature:LAST:Cur\: %5.1lf(' + self.temperature_unit + ')',
-                    'GPRINT:temperature:MAX:Max\: %5.1lf(' + self.temperature_unit + ')',
-                    'GPRINT:temperature:MIN:Min\: %5.1lf(' + self.temperature_unit + ')\t\t\t')
 
     def _iot_publish(self, data):
         values = []
