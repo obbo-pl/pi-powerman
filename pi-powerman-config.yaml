@@ -88,9 +88,9 @@ jobs:
     on_boot:
         timeout: 60
         commands:
-            - '$clear_error DAEMON_ERROR'
-            - '$clear_error SYSTEM_ERROR'
-            - '$clear_error DAEMON_TIMEOUT'
+            - '$clear_error DAEMON'
+            - '$clear_error SYSTEM'
+            - '$clear_error TIMEOUT_DAEMON'
             - '$press_button SW2 ON'
         on_failed: '$set_daemon_error'
     

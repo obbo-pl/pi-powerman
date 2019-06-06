@@ -1,5 +1,5 @@
 #example hardware configuration file for pi-powerman.py
-#
+
   
 i2c:
     # 7 bit address (will be left shifted to add the read write bit)
