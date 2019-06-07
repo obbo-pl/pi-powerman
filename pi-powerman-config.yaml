@@ -65,6 +65,8 @@ mqtt:
     connection_type: 2
     host: 'mqtt.thingspeak.com'
     credential_file: '/usr/local/pi-powerman/pi-powerman.mqtt' 
+    # Available data_format values: 'thingspeak', 'json', 'csv'
+    data_format: 'thingspeak' 
     
 # output supported on power module
 outputs:

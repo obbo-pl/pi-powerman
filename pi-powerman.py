@@ -20,12 +20,10 @@ from os import path
 from subprocess import Popen, PIPE
 from operator import itemgetter
 import smbus 
+import RPi.GPIO as GPIO
 import shlex
 import signal
-import RPi.GPIO as GPIO
 import schedule
-# https://pypi.org/project/paho-mqtt/
-import paho.mqtt.client as mqtt
 
 
 bus = smbus.SMBus(1)       # 0 = /dev/i2c-0 (port I2C0), 1 = /dev/i2c-1 (port I2C1)
@@ -258,7 +256,10 @@ def safe_cast(val, to_type, default=None):
 
 
 class PiPowerMQTT(object):
+    # https://pypi.org/project/paho-mqtt/
     def __init__(self, config):
+        import paho.mqtt.client as mqtt
+        
         counter = 0    
         self.configured = False
         self.connected = False
@@ -267,6 +268,7 @@ class PiPowerMQTT(object):
             counter += 1
         self.connection_type = config['connection_type']
         self.credential_file = config['credential_file']
+        self.data_format = config['data_format']
         if self.connection_type == 0:
             self.transport = 'tcp'
             self.port = 1883
@@ -318,14 +320,40 @@ class PiPowerMQTT(object):
     
     def publish(self, values):
         if self.connected:
-            payload = ''
-            for i in range(0, len(values), 1):
-                if not(values[i] is None):
-                    payload += 'field{}={}&'.format(i + 1, values[i].strip())
-            if payload.index('=') > 0:
-                payload = payload[:-1]
-                logger.debug('MQTT publish payload: {}'.format(payload))
-                self.mqttc.publish(self.topic, payload)        
+            if self.data_format == 'thingspeak':
+                to_publish = self._data_format_thingspeak(values)
+            elif self.data_format == 'csv':
+                to_publish = self._data_format_csv(values)
+            elif self.data_format == 'json':
+                to_publish = self._data_format_json(values)
+            else:
+                logger.debug('Unknown data format "{}", skipping MQTTT data publish.'.format(to_publish))
+                return
+            logger.debug('MQTT publish payload: {}'.format(to_publish))
+            self.mqttc.publish(self.topic, to_publish)        
+    
+    def _data_format_thingspeak(self, values):
+        payload = []
+        for i in values:
+            if not(next(iter(i.values())) is None):
+                payload.append('field{}={}'.format(values.index(i) + 1, next(iter(i.values()))))
+        return '&'.join(payload)
+
+    def _data_format_csv(self, values):
+        payload = []
+        for i in values:
+            if not(next(iter(i.values())) is None):
+                payload.append('{}'.format(next(iter(i.values()))))
+            else:
+                payload.append('')
+        return ';'.join(payload)
+    
+    def _data_format_json(self, values):
+        payload = []
+        for i in values:
+            if not(next(iter(i.values())) is None):
+                payload.append('{' + '"{}": {}'.format(next(iter(i)), next(iter(i.values()))) + '}')
+        return '[{}]'.format(','.join(payload))
     
     def is_connected(self):
         return self.connected
@@ -598,27 +626,14 @@ class PiPowerExport(object):
     def _iot_publish(self, data):
         values = []
         for i in self.setup['iot_publish']:
-            value = None
-            if i == 'supply_voltage':
-                value = data.supply_voltage
-            if i == 'bus_voltage':
-                value = data.bus_voltage
-            if i == 'shunt_voltage':
-                value = data.shunt_voltage
-            if i == 'current':
-                value = data.current
-            if i == 'battery_voltage':
-                value = data.battery_voltage
-            if i == 'battery_temperature':
-                value = data.battery_temperature
-            if i == 'power':
-                value = data.power
-            if not(value is None):
-                values.append('{:4.1f}'.format(value))
+            if hasattr(data, i):
+                value = getattr(data, i)
+                values.append({i: '{:4.1f}'.format(value).strip()})
             else:
-                values.append(None)
+                logger.debug('No attribute in data, ({})'.format(i))
+                values.append({i: None})
         self.iot.publish(values)
-                    
+        
     def _create_report(self, source, data):
         result = []
         date_time = '%I:%M:%S %p on %B %d, %Y'
