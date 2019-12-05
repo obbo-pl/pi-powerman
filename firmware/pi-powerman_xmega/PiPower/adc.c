@@ -53,7 +53,7 @@ uint16_t adc_ReadInput(void)
 {
 	uint16_t result = 0;
 #ifdef CONFIG_ADC_MEASUREMENT_INSTALLED
-	result (uint16_t)(ADCA.CH0.RES);
+	result = (uint16_t)(ADCA.CH0.RES);
 #endif
 	return result;
 }

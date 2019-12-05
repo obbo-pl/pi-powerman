@@ -606,7 +606,7 @@ int main(void)
 		// adc_V_In LSB = 0.01V, adc_V_Bat LSB = 0.01V
 		if (counter_Check(&adc_maesurement_ready)) {
 			uint16_t cut_level = trunc(*(pipo_setup.ups_cut_level_mv) / 10);
-			if (*pipo_status.adc_V_In < pipo_setup.power_loss_level_mv) {
+			if (*pipo_status.adc_V_In < *(pipo_setup.power_loss_level_mv)) {
 				if (after_power_loss_s.pause) counter_Reset(&after_power_loss_s);
 				if ((*(pipo_setup.ups_behavior) == UPS_SHUT_IMMEDIATELY) || ((*(pipo_setup.ups_behavior) == UPS_SHUT_DELAYED) && 
 												   (counter_Check(&after_power_loss_s))) || (*pipo_status.adc_V_Bat < cut_level)) {
@@ -625,7 +625,7 @@ int main(void)
 #ifdef CONFIG_UPS_INSTALLED
 		// Check battery overheat, temperature LSB = 0.01K
 		if (counter_Check(&adc_maesurement_ready)) {
-			if (*pipo_status.adc_BAT_Temp > pipo_setup.battery_overheat_01k) {
+			if (*pipo_status.adc_BAT_Temp > *(pipo_setup.battery_overheat)) {
 				setbit(*(pipo_status.errors), MAIN_ERROR_BATTERY_OVERHEAT);
 				button_request[KEYBOARD_KEY_PWR] = BUTTON_STATE_OFF;
 			} else {
