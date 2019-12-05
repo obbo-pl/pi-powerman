@@ -12,10 +12,10 @@ export:
         - 'show'
         #- 'save'
         #- 'log'
-        - 'rrd'
+        #- 'rrd'
         #- 'csv'
         # for IoT communication setup mqtt section 
-        - 'iot'
+        #- 'iot'
     #report in humane readable format (show, save, log)
     report_date_time_format: '%H:%M:%S on %Y %B %d'
     report_raw_data: true
@@ -23,7 +23,6 @@ export:
     report_pi_daemon_state: true
     report_supply_voltage: true
     report_bus_voltage: true
-    report_shunt_voltage: true
     report_current: true
     report_power: true
     report_outputs_state: true
@@ -49,7 +48,6 @@ export:
         - 'power'
         #- 'empty'
         #- 'bus_voltage'
-        #- 'shunt_voltage'
         #- 'current'
         
 log:
@@ -82,7 +80,6 @@ factors:
     battery_voltage: 0.01
     battery_temperature: 0.01
     bus_voltage: 0.0005
-    shunt_voltage: 0.01
     current: 0.1
     power: 0.001
 

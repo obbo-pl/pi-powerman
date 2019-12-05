@@ -4,7 +4,7 @@
 #
 # Author: Krzysztof Markiewicz
 # 2019, www.obbo.pl
-# v.0.8.20190606
+# v.0.8.20191205
 #
 # This program is distributed under the terms of the GNU General Public License v3.0
 #
@@ -477,10 +477,12 @@ class PiPowerRRD(object):
                 max_power = 500 # watt
                 min_temperature = -150 # kelvin, celsius, fahrenheit
                 max_temperature = 400 # kelvin, celsius, fahrenheit
-                self._create_datafile(folder, 'pipo_supply-voltage.rrd','DS:voltage:GAUGE:600:0:' + str(max_voltage), step, option, archives)
-                self._create_datafile(folder, 'pipo_bus-voltage.rrd','DS:voltage:GAUGE:600:0:' + str(max_voltage), step, option, archives)
-                self._create_datafile(folder, 'pipo_current.rrd','DS:current:GAUGE:600:0:' + str(max_current), step, option, archives)
-                self._create_datafile(folder, 'pipo_power.rrd','DS:power:GAUGE:600:0:' + str(max_power), step, option, archives)
+                if self.hardware.features['adc_measure_presence']:
+                    self._create_datafile(folder, 'pipo_supply-voltage.rrd','DS:voltage:GAUGE:600:0:' + str(max_voltage), step, option, archives)
+                if self.hardware.features['i2c_1measuere_presence']:
+                    self._create_datafile(folder, 'pipo_bus-voltage.rrd','DS:voltage:GAUGE:600:0:' + str(max_voltage), step, option, archives)
+                    self._create_datafile(folder, 'pipo_current.rrd','DS:current:GAUGE:600:0:' + str(max_current), step, option, archives)
+                    self._create_datafile(folder, 'pipo_power.rrd','DS:power:GAUGE:600:0:' + str(max_power), step, option, archives)
                 if self.hardware.features['ups_presence']:
                     self._create_datafile(folder, 'pipo_battery-voltage.rrd','DS:voltage:GAUGE:600:0:' + str(max_voltage), step, option, archives)
                     self._create_datafile(folder, 'pipo_battery-temperature.rrd','DS:temperature:GAUGE:600:' + str(min_temperature)+ ':' + str(max_temperature), step, option, archives)
@@ -506,14 +508,16 @@ class PiPowerRRD(object):
             self.temperature_unit = data.battery_temperature_unit
             folder = self.setup['rrd_folder']
             if path.isdir(folder):
-                if 'pipo_supply-voltage.rrd' in self.active_rrd:
-                    self.rrdtool.update(path.join(folder, 'pipo_supply-voltage.rrd'), 'N:' + str(data.supply_voltage))
-                if 'pipo_bus-voltage.rrd' in self.active_rrd:
-                    self.rrdtool.update(path.join(folder, 'pipo_bus-voltage.rrd'), 'N:' + str(data.bus_voltage))
-                if 'pipo_current.rrd' in self.active_rrd:
-                    self.rrdtool.update(path.join(folder, 'pipo_current.rrd'), 'N:' + str(data.current))
-                if 'pipo_power.rrd' in self.active_rrd:
-                    self.rrdtool.update(path.join(folder, 'pipo_power.rrd'), 'N:' + str(data.power))
+                if self.hardware.features['adc_measure_presence']:
+                    if 'pipo_supply-voltage.rrd' in self.active_rrd:
+                        self.rrdtool.update(path.join(folder, 'pipo_supply-voltage.rrd'), 'N:' + str(data.supply_voltage))
+                if self.hardware.features['i2c_1measuere_presence']:
+                    if 'pipo_bus-voltage.rrd' in self.active_rrd:
+                        self.rrdtool.update(path.join(folder, 'pipo_bus-voltage.rrd'), 'N:' + str(data.bus_voltage))
+                    if 'pipo_current.rrd' in self.active_rrd:
+                        self.rrdtool.update(path.join(folder, 'pipo_current.rrd'), 'N:' + str(data.current))
+                    if 'pipo_power.rrd' in self.active_rrd:
+                        self.rrdtool.update(path.join(folder, 'pipo_power.rrd'), 'N:' + str(data.power))
                 if self.hardware.features['ups_presence']:
                     if 'pipo_battery-voltage.rrd' in self.active_rrd:
                         self.rrdtool.update(path.join(folder, 'pipo_battery-voltage.rrd'), 'N:' + str(data.battery_voltage))
@@ -533,38 +537,46 @@ class PiPowerRRD(object):
           
     def _update_graph_period(self, folder, width, mode, period):
         battery_voltage = []
+        supply_voltage = []
+        bus_voltage = []
         if self.hardware.features['ups_presence']:
             battery_voltage = ['DEF:battery=' + path.join(folder, 'pipo_battery-voltage.rrd') + ':voltage:AVERAGE',
                 'LINE3:battery#00ffff:Battery voltage(V)\t',
                 'GPRINT:battery:LAST:Cur\: %5.1lf(V)',
                 'GPRINT:battery:MAX:Max\: %5.1lf(V)',
                 'GPRINT:battery:MIN:Min\: %5.1lf(V)\t\t\t']
-        ret = self.rrdtool.graph(path.join(folder, 'pipo_voltage_' + period[1:] + '.png'), '--start', period, width, mode,
-            'DEF:supply=' + path.join(folder, 'pipo_supply-voltage.rrd') + ':voltage:AVERAGE',
-            'DEF:bus=' + path.join(folder, 'pipo_bus-voltage.rrd') + ':voltage:AVERAGE',          
-            'LINE1:supply#0000ff:Supply voltage(V)\t',
-            'GPRINT:supply:LAST:Cur\: %5.1lf(V)',
-            'GPRINT:supply:MAX:Max\: %5.1lf(V)',
-            'GPRINT:supply:MIN:Min\: %5.1lf(V)\t\t\t',
-            'LINE2:bus#00ff00:Bus voltage(V)\t',
-            'GPRINT:bus:LAST:Cur\: %5.1lf(V)',
-            'GPRINT:bus:MAX:Max\: %5.1lf(V)',
-            'GPRINT:bus:MIN:Min\: %5.1lf(V)\t\t\t',
-            battery_voltage)
+        if self.hardware.features['adc_measure_presence']:
+            supply_voltage = ['DEF:supply=' + path.join(folder, 'pipo_supply-voltage.rrd') + ':voltage:AVERAGE',
+                'LINE1:supply#0000ff:Supply voltage(V)\t',
+                'GPRINT:supply:LAST:Cur\: %5.1lf(V)',
+                'GPRINT:supply:MAX:Max\: %5.1lf(V)',
+                'GPRINT:supply:MIN:Min\: %5.1lf(V)\t\t\t']
+        if self.hardware.features['i2c_1measuere_presence']:
+            bus_voltage = ['DEF:bus=' + path.join(folder, 'pipo_bus-voltage.rrd') + ':voltage:AVERAGE',          
+                'LINE2:bus#00ff00:Bus voltage(V)\t',
+                'GPRINT:bus:LAST:Cur\: %5.1lf(V)',
+                'GPRINT:bus:MAX:Max\: %5.1lf(V)',
+                'GPRINT:bus:MIN:Min\: %5.1lf(V)\t\t\t']
+        if self.hardware.features['ups_presence'] or self.hardware.features['adc_measure_presence'] or self.hardware.features['i2c_1measuere_presence']:
+            ret = self.rrdtool.graph(path.join(folder, 'pipo_voltage_' + period[1:] + '.png'), '--start', period, width, mode,
+                supply_voltage,
+                bus_voltage,
+                battery_voltage)
                    
-        ret = self.rrdtool.graph(path.join(folder, 'pipo_current_' + period[1:] + '.png'), '--start', period, width, mode,
-            'DEF:current=' + path.join(folder, 'pipo_current.rrd') + ':current:AVERAGE',
-            'LINE1:current#0000ff:Current(mA)',
-            'GPRINT:current:LAST:Cur\: %5.1lf(mA)',
-            'GPRINT:current:MAX:Max\: %5.1lf(mA)',
-            'GPRINT:current:MIN:Min\: %5.1lf(mA)\t\t\t')
+        if self.hardware.features['i2c_1measuere_presence']:
+            ret = self.rrdtool.graph(path.join(folder, 'pipo_current_' + period[1:] + '.png'), '--start', period, width, mode,
+                'DEF:current=' + path.join(folder, 'pipo_current.rrd') + ':current:AVERAGE',
+                'LINE1:current#0000ff:Current(mA)',
+                'GPRINT:current:LAST:Cur\: %5.1lf(mA)',
+                'GPRINT:current:MAX:Max\: %5.1lf(mA)',
+                'GPRINT:current:MIN:Min\: %5.1lf(mA)\t\t\t')
 
-        ret = self.rrdtool.graph(path.join(folder, 'pipo_power_' + period[1:] + '.png'), '--start', period, width, mode,
-            'DEF:power=' + path.join(folder, 'pipo_power.rrd') + ':power:AVERAGE',
-            'LINE1:power#0000ff:Power(W)',
-            'GPRINT:power:LAST:Cur\: %5.1lf(W)',
-            'GPRINT:power:MAX:Max\: %5.1lf(W)',
-            'GPRINT:power:MIN:Min\: %5.1lf(W)\t\t\t')
+            ret = self.rrdtool.graph(path.join(folder, 'pipo_power_' + period[1:] + '.png'), '--start', period, width, mode,
+                'DEF:power=' + path.join(folder, 'pipo_power.rrd') + ':power:AVERAGE',
+                'LINE1:power#0000ff:Power(W)',
+                'GPRINT:power:LAST:Cur\: %5.1lf(W)',
+                'GPRINT:power:MAX:Max\: %5.1lf(W)',
+                'GPRINT:power:MIN:Min\: %5.1lf(W)\t\t\t')
 
         if self.hardware.features['ups_presence']:
             ret = self.rrdtool.graph(path.join(folder, 'pipo_temperature_' + period[1:] + '.png'), '--start', period, width, mode,
@@ -649,21 +661,20 @@ class PiPowerExport(object):
         if 'report_pi_daemon_state' in self.setup:
             if self.setup['report_pi_daemon_state']:
                 result.append(self._to_string_pi_daemon_state(data.pi_daemon_state, self.hardware.daemon))
-        if 'report_supply_voltage' in self.setup:
-            if self.setup['report_supply_voltage']:
-                result.append(self._to_string_measure('Supply voltage', data.supply_voltage, 'V'))
-        if 'report_bus_voltage' in self.setup:
-            if self.setup['report_bus_voltage']:
-                result.append(self._to_string_measure('Bus voltage', data.bus_voltage, 'V'))
-        if 'report_shunt_voltage' in self.setup:
-            if self.setup['report_shunt_voltage']:
-                result.append(self._to_string_measure('Shunt voltage', data.shunt_voltage, 'mV'))
-        if 'report_current' in self.setup:
-            if self.setup['report_current']:
-                result.append(self._to_string_measure('Current', data.current, 'mA'))
-        if 'report_power' in self.setup:
-            if self.setup['report_power']:
-                result.append(self._to_string_measure('Power', data.power, 'W'))
+        if self.hardware.features['adc_measure_presence']:
+            if 'report_supply_voltage' in self.setup:
+                if self.setup['report_supply_voltage']:
+                    result.append(self._to_string_measure('Supply voltage', data.supply_voltage, 'V'))
+        if self.hardware.features['i2c_1measuere_presence']:
+            if 'report_bus_voltage' in self.setup:
+                if self.setup['report_bus_voltage']:
+                    result.append(self._to_string_measure('Bus voltage', data.bus_voltage, 'V'))
+            if 'report_current' in self.setup:
+                if self.setup['report_current']:
+                    result.append(self._to_string_measure('Current', data.current, 'mA'))
+            if 'report_power' in self.setup:
+                if self.setup['report_power']:
+                    result.append(self._to_string_measure('Power', data.power, 'W'))
         if 'report_outputs_state' in self.setup:
             if self.setup['report_outputs_state']:
                 result.append(self._to_string_power_outputs_state(data.output_state, self.hardware.outputs))
@@ -727,11 +738,12 @@ class PiPowerExport(object):
         result.append(datetime.datetime.now().strftime('%Y-%m-%d'))
         result.append(datetime.datetime.now().strftime('%H:%M:%S'))
         result.append(self._to_csv_buttons_state(data.buttons, self.hardware.buttons))
-        result.append(self._to_csv_measure(data.supply_voltage))
-        result.append(self._to_csv_measure(data.bus_voltage))
-        result.append(self._to_csv_measure(data.shunt_voltage))
-        result.append(self._to_csv_measure(data.current))
-        result.append(self._to_csv_measure(data.power))
+        if self.hardware.features['adc_measure_presence']:
+            result.append(self._to_csv_measure(data.supply_voltage))
+        if self.hardware.features['i2c_1measuere_presence']:
+            result.append(self._to_csv_measure(data.bus_voltage))
+            result.append(self._to_csv_measure(data.current))
+            result.append(self._to_csv_measure(data.power))
         result.append(self._to_csv_power_outputs_state(data.output_state, self.hardware.outputs))
         if self.hardware.features['ups_presence']:
             result.append(self._to_csv_ups_state(data.ups_state, self.hardware.ups))
@@ -746,7 +758,12 @@ class PiPowerExport(object):
             if not(path.isfile(file_name)):
                 try:
                     with open(file_name, 'w') as file:
-                        file.write('Date;Time;Buttons;Supply voltage [V];Bus voltage [V];Shunt voltage [mV];Current [mA];Power [W];Outputs;')
+                        file.write('Date;Time;Buttons;')
+                        if self.hardware.features['adc_measure_presence']:
+                            file.write('Supply voltage [V];')
+                        if self.hardware.features['i2c_1measuere_presence']:
+                            file.write('Bus voltage [V];Shunt voltage [mV];Current [mA];Power [W];')
+                        file.write('Outputs;')
                         if self.hardware.features['ups_presence']:
                             file.write('UPS state;Battery voltage [V];Battery temperature [' + self.temperature_unit + '];')
                         file.write('Errors;\n')
@@ -1230,7 +1247,6 @@ class PiPowerConfig(object):
             'report_pi_daemon_state': True,
             'report_supply_voltage': True,
             'report_bus_voltage': True,
-            'report_shunt_voltage': True,
             'report_current': True,
             'report_power': True,
             'report_outputs_state': True,
@@ -1262,7 +1278,6 @@ class PiPowerConfig(object):
             'battery_voltage',
             'battery_temperature',
             'bus_voltage',
-            'shunt_voltage',
             'current',
             'power']    
         self.factors = {
@@ -1270,7 +1285,6 @@ class PiPowerConfig(object):
             'battery_voltage': 0.1,
             'battery_temperature': 0.1,
             'bus_voltage': 0.1,
-            'shunt_voltage': 0.1,
             'current': 0.1,
             'power': 0.1}
         self.outputs = {}
@@ -1349,16 +1363,23 @@ class PiPowerHardware(object):
         self.features = {
             'version': 1,
             'ups_presence': False,
-            'buttons_count': 1,
-            'outputs_count': 1}
+            'button_presence': 0b00000000,
+            'led_presence': 0b00000000,
+            'output_presence': 0b00000000,
+            'led_status_presence': False,
+            'adc_measure_presence': False,
+            'i2c_1measuere_presence': False,
+            'i2c_2measuere_presence': False,
+            'i2c_3measuere_presence': False,
+            }
         self.i2c = {}
+        self.setup = {}
         self.outputs = {}
         self.daemon = {}
         self.errors = {}
         self.ups = {}
         self.buttons = {}
         self.requests = {}
-        self.setup = {}
                     
     def load(self, config_file_name='pi-powerman-hardware.yaml'):
         result = True
@@ -1372,21 +1393,22 @@ class PiPowerHardware(object):
                 except yaml.YAMLError as exc:
                     logger.error('When opennig {} YAML config file: {}'.format(config_file_name, exc)) 
                     result = False
-            self.i2c = self.get_section('i2c', cfg, config_file_name)
-            self.outputs = self.get_section('outputs', cfg, config_file_name)
-            if 'ports' in self.outputs:
-                hardware_ports_sorted = sorted(self.outputs['ports'].items(), key=itemgetter(1))
-                self.outputs['ports'] = hardware_ports_sorted[:self.MAX_OUTPUTS_COUNT]              
-            self.daemon = self.get_section('daemon', cfg, config_file_name)
-            self.errors = self.get_section('errors', cfg, config_file_name)
-            self.ups = self.get_section('ups', cfg, config_file_name)
-            self.buttons = self.get_section('buttons', cfg, config_file_name)
-            if 'ports' in self.buttons:
-                hardware_ports_sorted = sorted(self.buttons['ports'].items(), key=itemgetter(1))
-                self.buttons['ports'] = hardware_ports_sorted[:self.MAX_BUTTONS_COUNT]
-            self.requests = self.get_section('requests', cfg, config_file_name)
-            self.setup = self.get_section('setup', cfg, config_file_name)
-            logger.info('Hardware setup ({}) loaded'.format(config_file_name))
+                else:
+                    self.i2c = self.get_section('i2c', cfg, config_file_name)
+                    self.outputs = self.get_section('outputs', cfg, config_file_name)
+                    if 'ports' in self.outputs:
+                        hardware_ports_sorted = sorted(self.outputs['ports'].items(), key=itemgetter(1))
+                        self.outputs['ports'] = hardware_ports_sorted[:self.MAX_OUTPUTS_COUNT]              
+                    self.daemon = self.get_section('daemon', cfg, config_file_name)
+                    self.errors = self.get_section('errors', cfg, config_file_name)
+                    self.ups = self.get_section('ups', cfg, config_file_name)
+                    self.buttons = self.get_section('buttons', cfg, config_file_name)
+                    if 'ports' in self.buttons:
+                        hardware_ports_sorted = sorted(self.buttons['ports'].items(), key=itemgetter(1))
+                        self.buttons['ports'] = hardware_ports_sorted[:self.MAX_BUTTONS_COUNT]
+                    self.requests = self.get_section('requests', cfg, config_file_name)
+                    self.setup = self.get_section('setup', cfg, config_file_name)
+                    logger.info('Hardware setup ({}) loaded'.format(config_file_name))
         else:
             logger.error('Can\'t find file: "{}"'.format(config_file_name))
             result = False
@@ -1397,18 +1419,21 @@ class PiPowerHardware(object):
         info.extend(i2c.read_bus(self.requests['DAEMON_REQUEST_READ_INFO0']))
         logger.debug('Hardware features info: "{}"'.format(info))
         self.features['version'] = info[0]
-        if info[1] > 0:
-            self.features['ups_presence'] = True
-        else:
-            self.features['ups_presence'] = False
-        self.features['buttons_count'] = info[2]
-        if self.features['buttons_count'] > self.MAX_BUTTONS_COUNT:
-            self.features['buttons_count'] = self.MAX_BUTTONS_COUNT
-        self.buttons['ports'] = self.buttons['ports'][:self.features['buttons_count']]
-        self.features['outputs_count'] = info[3]
-        if self.features['outputs_count']  > self.MAX_OUTPUTS_COUNT:
-            self.features['outputs_count']  = self.MAX_OUTPUTS_COUNT
-        self.outputs['ports'] = self.outputs['ports'][:self.features['outputs_count']]
+        self.features['ups_presence'] = bool(info[1])
+        self.features['button_presence'] = info[2]
+        for i in range(7, -1, -1):
+            if not((self.features['button_presence'] >> i) & 0x01):
+                del self.buttons['ports'][i]
+        self.features['led_presence'] = info[3]
+        self.features['output_presence'] = info[4]
+        for i in range(7, -1, -1):
+            if not((self.features['output_presence'] >> i) & 0x01):
+                del self.outputs['ports'][i]
+        self.features['led_status_presence'] = bool(info[5])
+        self.features['adc_measure_presence'] = bool(info[6])
+        self.features['i2c_1measuere_presence'] = bool(info[7])
+        self.features['i2c_2measuere_presence'] = bool(info[8])
+        self.features['i2c_3measuere_presence'] = bool(info[9])
         
     def get_section(self, section, cfg, file):
         if section in cfg:
@@ -1445,12 +1470,10 @@ class PiPowerData(object):
                 (data[10] * 0x100 + data[9]) * self.factors['battery_temperature'])['value']
             self.output_state = [data[11]]
             self.ups_state = data[12]
-            self.bus_voltage = (data[14] * 0x100 + data[13]) * self.factors['bus_voltage']
-            self.shunt_voltage = (data[16] * 0x100 + data[15]) * self.factors['shunt_voltage']
-            self.current = (data[18] * 0x100 + data[17]) * self.factors['current']
+            self.errors = data[13]
+            self.bus_voltage = (data[15] * 0x100 + data[14]) * self.factors['bus_voltage']
+            self.current = (data[17] * 0x100 + data[16]) * self.factors['current']
             self.power = self.current * self.bus_voltage * self.factors['power']
-            self.errors = data[19]
-            self.requst = data[20]
             self.ready = True
         
     def _convert_temperature(self, unit, temperature=None):
@@ -1489,6 +1512,11 @@ class PiPowerSetup(object):
         self.setup.append(self._outputs_to_byte(setup['on_boot_output']))
         self.setup.append(setup['on_boot_delay_s'] & 0xff)
         self.setup.append(setup['on_boot_delay_s'] >> 8)
+        self.setup.append(setup['on_down_delay_s'] & 0xff)
+        self.setup.append(setup['on_down_delay_s'] >> 8)
+        self.setup.append(self._outputs_to_byte(setup['on_pioff_output']))
+        self.setup.append(setup['on_pioff_delay_s'] & 0xff)
+        self.setup.append(setup['on_pioff_delay_s'] >> 8)
         self.setup.append(setup['daemon_timeout_s'] & 0xff)
         self.setup.append(setup['daemon_timeout_s'] >> 8)
         self.setup.append(self._errors_to_byte(setup['error_recoverable']))
@@ -1497,6 +1525,12 @@ class PiPowerSetup(object):
         self.setup.append(setup['ups_shut_delay_s'] >> 8)
         self.setup.append(setup['ups_cut_level_mv'] & 0xff)
         self.setup.append(setup['ups_cut_level_mv'] >> 8)
+        self.setup.append(setup['ups_min_charge_time_s'] & 0xff)
+        self.setup.append(setup['ups_min_charge_time_s'] >> 8)
+        self.setup.append(setup['battery_overheat_01k'] & 0xff)
+        self.setup.append(setup['battery_overheat_01k'] >> 8)
+        self.setup.append(setup['main_power_loss_mv'] & 0xff)
+        self.setup.append(setup['main_power_loss_mv'] >> 8)
         while len(self.setup) < (self.hw_i2c['RECEIVE_BUFFER_SIZE'] - 1):
             self.setup.append(0x00)
        
@@ -1529,7 +1563,7 @@ class PiPowerSetup(object):
         outputs_list = list.split(',')
         for i in outputs_list:
             for j in self.hw_outputs['ports']:
-                if i == j[0]:
+                if i.strip() == j[0]:
                     result += 1 << j[1]
         return result
        
