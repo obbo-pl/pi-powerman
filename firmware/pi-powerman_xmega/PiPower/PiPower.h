@@ -9,7 +9,6 @@
  * This program is distributed under the terms of the GNU General Public License
  */ 
 
-
 #ifndef PIPOWER_H_
 #define PIPOWER_H_
 

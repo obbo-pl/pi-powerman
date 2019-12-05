@@ -14,6 +14,7 @@
 #include <avr/eeprom.h>
 
 
+
 uint8_t current_mux_input = 0;
 #ifdef CONFIG_ADC_MEASUREMENT_INSTALLED
 	const uint8_t adc_input[ADC_MAX_INPUT_COUNT] = {CONFIG_ADC_MUX_PiState, CONFIG_ADC_MUX_V_In, CONFIG_ADC_MUX_V_Bat, CONFIG_ADC_MUX_BAT_Temp};
